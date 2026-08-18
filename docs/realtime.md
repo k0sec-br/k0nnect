@@ -4,7 +4,7 @@
 
 Cada sala usa um Durable Object `VoiceRoom`. O endpoint WebSocket exige sessão, Origin exata, sala existente e rate limit antes do upgrade. A identidade vem da sessão; conexões duplicadas do mesmo usuário substituem a anterior. Attachments serializados permitem WebSocket Hibernation sem estado global mutável.
 
-O protocolo versionado (`v: 2`) aceita heartbeat, mute/deafen e speaking. Eventos do servidor anunciam participantes e publicações por `publicationId`. Payloads são validados por Zod, têm limite de 4 KiB e orçamento de 50 mensagens por 10 segundos. Clientes não enviam `userId`, role, Realtime session ID ou Realtime track ID.
+O protocolo versionado (`v: 2`) aceita heartbeat, mute/deafen e speaking. Eventos do servidor anunciam participantes e publicações por `publicationId`. Payloads são validados por Zod, têm limite de 4 KiB e orçamento de 50 mensagens por 10 segundos. Clientes não enviam `userId`, role ou Realtime track ID. O Realtime session ID opaco volta nas operações de mídia, mas o servidor o aceita somente quando está vinculado à mesma sessão de usuário, conexão e sala.
 
 ## Uma sessão de mídia por participante
 
@@ -15,13 +15,15 @@ microfone → câmera → tela → assinatura remota → unpublish
                          negotiation queue
 ```
 
-O microfone, a câmera, o vídeo da tela e o áudio opcional da tela usam transceivers separados na mesma conexão. Câmera usa três codificações simulcast (`a-high`, `b-medium`, `c-low`) com limites conservadores e ordem de fallback compatível com o SFU. A tela usa uma camada para preservar texto e detalhes; a arquitetura permite adicionar políticas específicas depois de testes reais.
+O microfone, a câmera, o vídeo da tela e o áudio opcional da tela usam transceivers separados na mesma conexão. Câmera usa três codificações simulcast (`a`, `b`, `c`) com limites conservadores e ordem de fallback compatível com o SFU. A tela usa uma camada para preservar texto e detalhes; a arquitetura permite adicionar políticas específicas depois de testes reais.
 
 ## Autorização server-side
 
 O Durable Object permite uma publicação de cada fonte por usuário: `microphone`, `camera`, `screen-video` e `screen-audio`. Áudio de tela exige uma publicação de tela ativa. O fluxo de publicação reserva o slot, chama o Cloudflare e conclui ou cancela a reserva.
 
-Para assinar, o frontend envia apenas `publicationId`. O Worker valida autenticação, CSRF, sala, conexão, sessão e rate limit. O `VoiceRoom` resolve a sessão e track internas somente se a publicação pertence a outro participante conectado na mesma sala. O Worker devolve apenas SDP, `mid` local e metadados públicos.
+Para assinar, o frontend envia apenas `publicationId` como identificador da mídia remota. O Worker valida autenticação, CSRF, sala, conexão, sessão e rate limit. O `VoiceRoom` reserva a assinatura atomicamente e resolve a sessão e track internas somente se a publicação pertence a outro participante conectado na mesma sala. O Worker devolve apenas SDP, `mid` local e metadados públicos.
+
+O `VoiceRoom` revalida a sessão vinculada ao WebSocket a cada minuto. Desconexão, substituição do socket ou revogação disparam a remoção de presença e o fechamento best-effort das tracks conhecidas no Realtime.
 
 ## Captura e controles
 

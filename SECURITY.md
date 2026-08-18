@@ -15,3 +15,5 @@ Inclua impacto, pré-condições, versão/commit afetado, reprodução mínima e
 Autenticação, recovery codes, convites, sessões, autorização, Durable Objects, WebSocket, integração Realtime e configuração de deploy estão no escopo. Segredos de conta Cloudflare, configuração incorreta de uma instalação de terceiros e vulnerabilidades já públicas sem impacto específico devem ser tratados pelo operador correspondente.
 
 Controles implementados são descritos em [docs/security-controls.md](docs/security-controls.md); limites e riscos residuais estão em [docs/threat-model.md](docs/threat-model.md).
+
+O registro técnico da auditoria adversarial mais recente está em [docs/security-audit.md](docs/security-audit.md).

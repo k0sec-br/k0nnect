@@ -27,6 +27,7 @@ Use um pepper aleatório de pelo menos 32 bytes e guarde backup seguro. Perder o
 ```bash
 pnpm install --frozen-lockfile
 pnpm check
+pnpm test:security
 pnpm test:e2e
 pnpm audit:dependencies
 pnpm deploy:dry-run
@@ -41,4 +42,4 @@ Revise `git status`, a branch e o dry-run antes da migration. Gere o primeiro ow
 
 Workers podem voltar a uma versão anterior, mas migrations D1 devem ser compatíveis para trás ou possuir plano de correção aditivo. Faça backup antes de mudanças destrutivas. O cron diário remove somente dados expirados/revogados. Monitore erros agregados por request ID sem registrar credenciais ou mídia.
 
-Antes de cada release, inspecione `dist/client` procurando valores reais dos secrets e padrões de token. Nomes de bindings podem aparecer no artefato Worker; valores não podem aparecer no bundle do navegador.
+Antes de cada release, inspecione `dist/client` procurando valores reais dos secrets e padrões de token. Nomes de bindings podem aparecer no artefato Worker; valores não podem aparecer no bundle do navegador. Confirme também que o ambiente ou integração Git usado para produção exige revisão e não publica código de pull requests não confiáveis.
