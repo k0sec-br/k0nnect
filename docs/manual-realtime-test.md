@@ -13,9 +13,14 @@ Execute em produção/staging com contas descartáveis autorizadas. Não grave �
 ## Controles
 
 - [ ] mute interrompe envio e atualiza presença
-- [ ] deafen interrompe reprodução, implica mute e atualiza presença
+- [ ] áudio desativado interrompe reprodução e transmissão
+- [ ] áudio reativado restaura microfone ativo quando essa era a intenção anterior
+- [ ] áudio reativado mantém microfone desativado quando essa era a intenção anterior
+- [ ] alterar a intenção do microfone durante áudio desativado produz o estado esperado ao reativar
 - [ ] speaking aparece e desaparece sem depender apenas de cor
 - [ ] troca de microfone mantém a chamada
+- [ ] falha na troca de microfone preserva a track anterior
+- [ ] abrir configurações e retornar mantém o mesmo WebSocket e a mesma sessão de mídia
 - [ ] sair encerra trilha e presença
 - [ ] câmera e tela ligadas não alteram mute, deafen ou speaking
 

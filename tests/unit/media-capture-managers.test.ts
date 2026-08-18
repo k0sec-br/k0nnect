@@ -44,6 +44,43 @@ describe('CameraManager', () => {
     await expect(manager.start()).rejects.toMatchObject({ name: 'NotAllowedError' });
     expect(getUserMedia).toHaveBeenCalledTimes(2);
   });
+
+  it('só encerra a câmera anterior após confirmar a substituição', async () => {
+    const previousTrack = fakeTrack('video');
+    const nextTrack = fakeTrack('video');
+    const previousStream = fakeStream([previousTrack]);
+    const nextStream = fakeStream([nextTrack]);
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce(previousStream)
+      .mockResolvedValueOnce(nextStream);
+    const manager = new CameraManager({ getUserMedia } as unknown as MediaDevices);
+    await manager.start('camera-front');
+    const applyReplacement = vi.fn(() => Promise.resolve());
+
+    expect(await manager.replace('camera-rear', applyReplacement)).toBe(nextStream);
+    expect(applyReplacement).toHaveBeenCalledWith(nextTrack);
+    expect(previousTrack.stop).toHaveBeenCalledOnce();
+    expect(nextTrack.stop).not.toHaveBeenCalled();
+  });
+
+  it('preserva a câmera anterior quando a nova track não pode ser aplicada', async () => {
+    const previousTrack = fakeTrack('video');
+    const nextTrack = fakeTrack('video');
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce(fakeStream([previousTrack]))
+      .mockResolvedValueOnce(fakeStream([nextTrack]));
+    const manager = new CameraManager({ getUserMedia } as unknown as MediaDevices);
+    await manager.start('camera-front');
+
+    await expect(
+      manager.replace('camera-rear', () => Promise.reject(new Error('replaceTrack falhou'))),
+    ).rejects.toThrow('replaceTrack falhou');
+    expect(previousTrack.stop).not.toHaveBeenCalled();
+    expect(nextTrack.stop).toHaveBeenCalledOnce();
+    expect(manager.currentTrack()).toBe(previousTrack);
+  });
 });
 
 describe('ScreenShareManager', () => {

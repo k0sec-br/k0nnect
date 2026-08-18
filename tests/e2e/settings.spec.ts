@@ -32,7 +32,16 @@ async function installSettingsBrowserFakes(page: Page): Promise<void> {
         removeEventListener() {},
         async enumerateDevices() {
           return [
-            { deviceId: 'microphone-1', kind: 'audioinput', label: 'Microfone principal' },
+            {
+              deviceId: 'microphone-1',
+              kind: 'audioinput',
+              label: 'Default - Razer Seiren Mini (Razer Seiren Mini) (1532:0531)',
+            },
+            {
+              deviceId: 'microphone-2',
+              kind: 'audioinput',
+              label: 'Communications - Razer Seiren Mini (Razer Seiren Mini)',
+            },
             { deviceId: 'camera-1', kind: 'videoinput', label: 'Câmera principal' },
           ];
         },
@@ -205,4 +214,17 @@ test('oculta a administração para membros', async ({ page }) => {
 
   await page.goto('/settings/invites');
   await expect(page).toHaveURL(/\/settings$/u);
+});
+
+test('apresenta dispositivos sem IDs técnicos e permite seleção por teclado', async ({ page }) => {
+  await openSettings(page, '/settings/media');
+
+  const microphone = page.getByRole('combobox', { name: 'Microfone' });
+  await microphone.press('ArrowDown');
+  await expect(page.getByRole('option', { name: /Padrão Razer Seiren Mini/u })).toBeVisible();
+  await expect(page.getByRole('option', { name: /Comunicações Razer Seiren Mini/u })).toBeVisible();
+  await expect(page.locator('body')).not.toContainText('1532:0531');
+  await microphone.press('ArrowDown');
+  await microphone.press('Enter');
+  await expect(microphone).toHaveAttribute('title', 'Comunicações — Razer Seiren Mini');
 });
