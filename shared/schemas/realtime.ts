@@ -24,7 +24,7 @@ export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
       roomId: roomIdSchema,
       connectionId: connectionIdSchema,
       sessionId: realtimeIdentifierSchema,
-      mid: transceiverMidSchema,
+      mid: transceiverMidSchema.optional(),
       sessionDescription: z.object({ type: z.literal('offer'), sdp: sdpSchema }).strict(),
     })
     .strict(),

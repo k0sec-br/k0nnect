@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { mediaErrorMessage } from '../../src/features/voice/media-errors';
 import { realtimeSessionRequestSchema } from '../../shared/schemas/realtime';
+import { findAudioTransceiverMid } from '../../worker/realtime/sdp';
 
 describe('camada de mídia', () => {
   it.each([
@@ -35,10 +36,25 @@ describe('camada de mídia', () => {
     expect(realtimeSessionRequestSchema.safeParse(baseRequest).success).toBe(true);
     expect(realtimeSessionRequestSchema.safeParse({ ...baseRequest, mid: '' }).success).toBe(false);
     expect(realtimeSessionRequestSchema.safeParse({ ...baseRequest, mid: undefined }).success).toBe(
-      false,
+      true,
     );
     expect(
       realtimeSessionRequestSchema.safeParse({ ...baseRequest, mediaKind: 'video' }).success,
     ).toBe(false);
+  });
+
+  it('recupera o mid da faixa de áudio para clientes ainda em cache', () => {
+    const sdp = [
+      'v=0',
+      'm=video 9 UDP/TLS/RTP/SAVPF 96',
+      'a=mid:video-0',
+      'm=audio 9 UDP/TLS/RTP/SAVPF 111',
+      'a=mid:audio-1',
+    ].join('\r\n');
+
+    expect(findAudioTransceiverMid(sdp)).toBe('audio-1');
+    expect(
+      findAudioTransceiverMid('v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:0'),
+    ).toBeUndefined();
   });
 });

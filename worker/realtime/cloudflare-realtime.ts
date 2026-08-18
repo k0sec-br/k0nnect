@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { AppError } from '../errors/app-error';
+import { findAudioTransceiverMid } from './sdp';
 
 const REALTIME_API_ORIGIN = 'https://rtc.live.cloudflare.com/v1';
 const MAX_REALTIME_RESPONSE_BYTES = 1_048_576;
@@ -77,15 +78,17 @@ export class CloudflareRealtimeClient {
   async publishAudio(
     sessionId: string,
     sessionDescription: { type: 'offer'; sdp: string },
-    mid: string,
+    mid: string | undefined,
     trackName: string,
   ) {
+    const audioMid = mid ?? findAudioTransceiverMid(sessionDescription.sdp);
+    if (!audioMid) throw new AppError('MEDIA_UNAVAILABLE', 400);
     const response = await this.request(
       `/sessions/${encodeURIComponent(sessionId)}/tracks/new`,
       'POST',
       {
         sessionDescription,
-        tracks: [{ location: 'local', mid, trackName }],
+        tracks: [{ location: 'local', mid: audioMid, trackName }],
       },
     );
     return tracksResponseSchema.parse(response);
