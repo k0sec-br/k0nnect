@@ -13,18 +13,58 @@ const RECOVERY_CODES = Array.from(
 
 async function installBrowserFakes(page: Page): Promise<void> {
   await page.addInitScript(() => {
+    const mediaSources = new WeakMap<HTMLMediaElement, unknown>();
+    Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+      configurable: true,
+      get() {
+        return mediaSources.get(this as HTMLMediaElement) ?? null;
+      },
+      set(value: unknown) {
+        mediaSources.set(this as HTMLMediaElement, value);
+      },
+    });
     class FakeMediaStream {
-      constructor(readonly tracks: unknown[] = []) {}
+      constructor(readonly tracks: { kind: string }[] = []) {}
       getAudioTracks() {
+        return this.tracks.filter((track) => track.kind === 'audio');
+      }
+      getVideoTracks() {
+        return this.tracks.filter((track) => track.kind === 'video');
+      }
+      getTracks() {
         return this.tracks;
       }
     }
 
     const localTrack = {
       id: 'local-audio',
+      kind: 'audio',
       enabled: true,
       stop() {},
       addEventListener() {},
+      getSettings() {
+        return { deviceId: 'default-mic' };
+      },
+    };
+    const cameraTrack = {
+      id: 'local-camera',
+      kind: 'video',
+      enabled: true,
+      stop() {},
+      addEventListener() {},
+      getSettings() {
+        return { deviceId: 'default-camera' };
+      },
+    };
+    const screenTrack = {
+      id: 'local-screen',
+      kind: 'video',
+      enabled: true,
+      stop() {},
+      addEventListener() {},
+      getSettings() {
+        return {};
+      },
     };
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
@@ -32,10 +72,16 @@ async function installBrowserFakes(page: Page): Promise<void> {
         addEventListener() {},
         removeEventListener() {},
         async enumerateDevices() {
-          return [{ deviceId: 'default-mic', kind: 'audioinput', label: 'Microfone de teste' }];
+          return [
+            { deviceId: 'default-mic', kind: 'audioinput', label: 'Microfone de teste' },
+            { deviceId: 'default-camera', kind: 'videoinput', label: 'Câmera de teste' },
+          ];
         },
-        async getUserMedia() {
-          return new FakeMediaStream([localTrack]);
+        async getUserMedia(constraints: MediaStreamConstraints) {
+          return new FakeMediaStream(constraints.video ? [cameraTrack] : [localTrack]);
+        },
+        async getDisplayMedia() {
+          return new FakeMediaStream([screenTrack]);
         },
       },
     });
@@ -66,18 +112,29 @@ async function installBrowserFakes(page: Page): Promise<void> {
 
     class FakePeerConnection extends EventTarget {
       connectionState = 'new';
-      private sender = { track: localTrack, async replaceTrack() {} };
-      addTrack() {
-        return this.sender;
+      private transceivers: {
+        mid: string;
+        sender: { track: unknown; replaceTrack(track: unknown): Promise<void> };
+      }[] = [];
+      addTransceiver(track: unknown) {
+        const sender = {
+          track,
+          async replaceTrack(nextTrack: unknown) {
+            this.track = nextTrack;
+          },
+        };
+        const transceiver = { mid: String(this.transceivers.length), sender };
+        this.transceivers.push(transceiver);
+        return transceiver;
       }
       getSenders() {
-        return [this.sender];
+        return this.transceivers.map((transceiver) => transceiver.sender);
       }
       getReceivers() {
         return [];
       }
       getTransceivers() {
-        return [{ mid: '0', sender: this.sender }];
+        return this.transceivers;
       }
       async createOffer() {
         return { type: 'offer', sdp: 'v=0' };
@@ -111,7 +168,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
           this.dispatchEvent(
             new MessageEvent('message', {
               data: JSON.stringify({
-                v: 1,
+                v: 2,
                 type: 'room.ready',
                 payload: {
                   connectionId: '22222222-2222-4222-8222-222222222222',
@@ -122,10 +179,9 @@ async function installBrowserFakes(page: Page): Promise<void> {
                       muted: false,
                       deafened: false,
                       speaking: false,
-                      realtimeSessionId: null,
-                      audioTrackName: null,
                     },
                   ],
+                  publications: [],
                 },
               }),
             }),
@@ -162,17 +218,36 @@ async function mockApi(page: Page): Promise<void> {
         rooms: [{ id: 'room_general', slug: 'geral', name: 'Geral', kind: 'voice', position: 0 }],
       };
     } else if (path === '/api/realtime/session') {
-      const realtimeRequest = request.postDataJSON() as { action: string; mid?: string };
+      const realtimeRequest = request.postDataJSON() as {
+        action: string;
+        mid?: string;
+        source?: string;
+      };
       const { action } = realtimeRequest;
       if (action === 'turn') data = { iceServers: [] };
       else if (action === 'create') data = { sessionId: 'session_1' };
       else if (action === 'publish') {
-        expect(realtimeRequest.mid).toBe('0');
+        expect(realtimeRequest.mid).toBeTruthy();
+        const kind =
+          realtimeRequest.source === 'camera' || realtimeRequest.source === 'screen-video'
+            ? 'video'
+            : 'audio';
         data = {
           sessionDescription: { type: 'answer', sdp: 'v=0' },
-          tracks: [{ trackName: 'audio_track_1' }],
+          publication: {
+            publicationId:
+              realtimeRequest.source === 'microphone'
+                ? '33333333-3333-4333-8333-333333333333'
+                : realtimeRequest.source === 'camera'
+                  ? '44444444-4444-4444-8444-444444444444'
+                  : '55555555-5555-4555-8555-555555555555',
+            userId: USER.id,
+            kind,
+            source: realtimeRequest.source,
+            createdAt: Date.now(),
+          },
         };
-      } else data = { closed: true };
+      } else data = { closed: true, requiresImmediateRenegotiation: false };
     } else {
       data = {};
     }
@@ -185,6 +260,11 @@ async function mockApi(page: Page): Promise<void> {
 }
 
 test('convite, recovery, sala, controles de voz, logout e login', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.stack ?? error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') pageErrors.push(message.text());
+  });
   await installBrowserFakes(page);
   await mockApi(page);
   await page.goto(`/invite#${'A'.repeat(43)}`);
@@ -205,6 +285,14 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(page.getByRole('main').getByText('Alice (você)')).toBeVisible();
   await page.getByRole('button', { name: 'Entrar na voz' }).click();
   await expect(page.getByRole('button', { name: 'Silenciar' })).toBeVisible();
+  await page.getByRole('button', { name: 'Ativar câmera' }).click();
+  await expect(page.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
+  await page.waitForTimeout(100);
+  expect(pageErrors).toEqual([]);
+  await page.getByRole('button', { name: 'Compartilhar tela' }).click();
+  await expect(page.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
+  await page.getByRole('button', { name: 'Parar compartilhamento' }).click();
+  await page.getByRole('button', { name: 'Desativar câmera' }).click();
   await page.getByRole('button', { name: 'Silenciar' }).click();
   await expect(page.getByRole('button', { name: 'Ativar microfone' })).toHaveAttribute(
     'aria-pressed',

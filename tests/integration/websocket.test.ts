@@ -1,4 +1,4 @@
-import { exports } from 'cloudflare:workers';
+import { env, exports } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ROOM_PROTOCOL_VERSION, type ServerRoomMessage } from '../../shared/protocol/room';
@@ -156,5 +156,78 @@ describe('sala em tempo real', () => {
     const heartbeat = JSON.stringify({ v: ROOM_PROTOCOL_VERSION, type: 'heartbeat', payload: {} });
     for (let message = 0; message < 51; message += 1) connection.socket.send(heartbeat);
     expect((await closed).code).toBe(1009);
+  });
+
+  it('autoriza publicações por ID opaco e aplica limites por fonte e sala', async () => {
+    const alice = await connect(await createAccount('alice', 'Alice'));
+    const bob = await connect(await createAccount('bob', 'Bob'));
+    if (alice.ready.type !== 'room.ready' || bob.ready.type !== 'room.ready') {
+      throw new Error('Mensagem room.ready esperada');
+    }
+    const aliceUserId = alice.ready.payload.participants.find(
+      (participant) => participant.displayName === 'Alice',
+    )?.userId;
+    const bobUserId = bob.ready.payload.participants.find(
+      (participant) => participant.displayName === 'Bob',
+    )?.userId;
+    if (!aliceUserId || !bobUserId) throw new Error('Participante ausente');
+
+    const room = env.VOICE_ROOMS.getByName('room_general');
+    expect(
+      await room.registerRealtimeSession(
+        aliceUserId,
+        alice.ready.payload.connectionId,
+        'alice_session',
+      ),
+    ).toBe(true);
+    const publicationId = await room.reservePublication(
+      aliceUserId,
+      alice.ready.payload.connectionId,
+      'alice_session',
+      'camera',
+      '1',
+    );
+    expect(publicationId).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(
+      await room.reservePublication(
+        aliceUserId,
+        alice.ready.payload.connectionId,
+        'alice_session',
+        'camera',
+        '2',
+      ),
+    ).toBeNull();
+    if (!publicationId) throw new Error('Reserva esperada');
+    const publication = await room.completePublication(
+      aliceUserId,
+      alice.ready.payload.connectionId,
+      publicationId,
+      'internal_track_name',
+    );
+    expect(publication).toMatchObject({ publicationId, source: 'camera', kind: 'video' });
+
+    const resolved = await room.resolvePublication(
+      bobUserId,
+      bob.ready.payload.connectionId,
+      publicationId,
+    );
+    expect(resolved?.publication.publicationId).toBe(publicationId);
+    expect(resolved?.realtimeTrackName).toBe('internal_track_name');
+    expect(
+      await room.resolvePublication(aliceUserId, alice.ready.payload.connectionId, publicationId),
+    ).toBeNull();
+    expect(
+      await env.VOICE_ROOMS.getByName('other_room').resolvePublication(
+        bobUserId,
+        bob.ready.payload.connectionId,
+        publicationId,
+      ),
+    ).toBeNull();
+    expect(
+      await room.resolvePublication(bobUserId, bob.ready.payload.connectionId, crypto.randomUUID()),
+    ).toBeNull();
+
+    alice.socket.close(1000, 'Fim do teste');
+    bob.socket.close(1000, 'Fim do teste');
   });
 });
