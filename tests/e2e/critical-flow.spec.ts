@@ -202,7 +202,7 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await page.getByRole('button', { name: 'Já guardei em segurança' }).click();
 
   await expect(page.getByRole('heading', { name: 'Geral' })).toBeVisible();
-  await expect(page.getByText('Alice (você)')).toBeVisible();
+  await expect(page.getByRole('main').getByText('Alice (você)')).toBeVisible();
   await page.getByRole('button', { name: 'Entrar na voz' }).click();
   await expect(page.getByRole('button', { name: 'Silenciar' })).toBeVisible();
   await page.getByRole('button', { name: 'Silenciar' }).click();

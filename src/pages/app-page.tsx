@@ -1,29 +1,26 @@
 import { useEffect, useState } from 'react';
 
 import type { RoomView } from '../../shared/types/api';
+import { AppShell } from '../components/app-shell';
+import { AudioOnlyView } from '../components/audio-only-view';
 import { FormMessage } from '../components/form-message';
-import { HeadphonesIcon, MicIcon, MicOffIcon, SettingsIcon, VolumeIcon } from '../components/icons';
+import { IconButton } from '../components/icon-button';
+import { MenuIcon, MicIcon, UsersIcon, VolumeIcon } from '../components/icons';
 import { RemoteAudio } from '../components/remote-audio';
 import { useAuth } from '../features/auth/auth-context';
 import { useRoomSocket } from '../features/rooms/use-room-socket';
 import { useVoiceSession } from '../features/voice/use-voice-session';
 import { usePublicConfig } from '../hooks/use-public-config';
 import { apiClient } from '../lib/api-client';
-import { handleInternalLink } from '../lib/navigation';
-
-function participantInitials(name: string): string {
-  return name
-    .split(/\s+/u)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
-}
+import { navigate } from '../lib/navigation';
 
 export function AppPage() {
-  const { user } = useAuth();
+  const { logout, user } = useAuth();
   const config = usePublicConfig();
   const [room, setRoom] = useState<RoomView | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [channelsOpen, setChannelsOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   useEffect(() => {
     apiClient
@@ -41,159 +38,110 @@ export function AppPage() {
     updateSpeaking: socket.updateSpeaking,
   });
 
+  if (!user) return null;
   if (!room) {
     return (
-      <div className="center-state">
+      <main className="center-state">
         {loadError ? (
           <FormMessage message={loadError} />
         ) : (
           <span className="spinner large" aria-label="Carregando sala" />
         )}
-      </div>
+      </main>
     );
   }
 
+  const shellVoice = {
+    status: voice.status,
+    muted: voice.muted,
+    deafened: voice.deafened,
+    canJoin: Boolean(socket.connectionId && config?.realtimeEnabled),
+    selectedDevice: voice.selectedDevice,
+    devices: voice.devices,
+    join: () => void voice.join(),
+    leave: () => void voice.leave(),
+    toggleMuted: voice.toggleMuted,
+    toggleDeafened: voice.toggleDeafened,
+    changeMicrophone: (deviceId: string) => void voice.changeMicrophone(deviceId),
+  };
+
   return (
-    <div className="voice-room">
-      <header className="room-header">
-        <div>
-          <span className="room-icon" aria-hidden="true">
-            <VolumeIcon />
-          </span>
-          <div>
+    <AppShell
+      user={user}
+      roomName={room.name}
+      participants={socket.participants}
+      connectionState={socket.connectionState}
+      voice={shellVoice}
+      channelsOpen={channelsOpen}
+      membersOpen={membersOpen}
+      onChannelsOpenChange={setChannelsOpen}
+      onMembersOpenChange={setMembersOpen}
+      onLogout={() => void logout().then(() => navigate('/login'))}
+    >
+      <div className="voice-room">
+        <header className="main-header">
+          <IconButton
+            label="Mostrar canais"
+            className="mobile-menu-button"
+            aria-expanded={channelsOpen}
+            onClick={() => setChannelsOpen(!channelsOpen)}
+          >
+            <MenuIcon aria-hidden="true" />
+          </IconButton>
+          <div className="main-header-title">
+            <VolumeIcon aria-hidden="true" />
             <h1>{room.name}</h1>
-            <p>Conversa por voz · sem gravação</p>
           </div>
-        </div>
-        <span className={`connection-badge ${socket.connectionState}`}>
-          <span aria-hidden="true" />
-          {socket.connectionState === 'connected'
-            ? 'Conectado'
-            : socket.connectionState === 'offline'
-              ? 'Sem conexão'
-              : 'Reconectando…'}
-        </span>
-      </header>
+          <span className={`connection-status connection-${socket.connectionState}`} role="status">
+            <i aria-hidden="true" />
+            {socket.connectionState === 'connected'
+              ? 'Conectado'
+              : socket.connectionState === 'offline'
+                ? 'Sem conexão'
+                : 'Reconectando…'}
+          </span>
+          <IconButton
+            label="Mostrar participantes"
+            className="members-toggle"
+            aria-expanded={membersOpen}
+            onClick={() => setMembersOpen(!membersOpen)}
+          >
+            <UsersIcon aria-hidden="true" />
+          </IconButton>
+        </header>
 
-      {(socket.message || voice.error) && <FormMessage message={voice.error || socket.message} />}
-      {!config?.realtimeEnabled && (
-        <div className="local-banner" role="status">
-          Presença local ativa. Configure o Cloudflare Realtime para habilitar áudio neste ambiente.
-        </div>
-      )}
-
-      <section className="participants-section" aria-labelledby="participants-title">
-        <div className="section-heading">
-          <h2 id="participants-title">Na sala</h2>
-          <span>{socket.participants.length} participantes</span>
-        </div>
-        <div className="participant-grid">
-          {socket.participants.map((participant) => (
-            <article
-              className={`participant-card ${participant.speaking ? 'speaking' : ''}`}
-              key={participant.userId}
-            >
-              <div className="participant-avatar">
-                {participantInitials(participant.displayName)}
-                {participant.speaking && (
-                  <span className="speaking-wave" aria-label="Falando agora">
-                    )))
-                  </span>
-                )}
-              </div>
-              <div className="participant-copy">
-                <strong>
-                  {participant.displayName} {participant.userId === user?.id && <span>(você)</span>}
-                </strong>
-                <span>{participant.speaking ? 'Falando agora' : 'Ouvindo'}</span>
-              </div>
-              <div className="participant-state">
-                {participant.deafened && <HeadphonesIcon aria-label="Som desativado" />}
-                {participant.muted && <MicOffIcon aria-label="Microfone desativado" />}
-              </div>
-            </article>
-          ))}
-          {socket.participants.length === 0 && (
-            <div className="empty-room">
-              <VolumeIcon aria-hidden="true" />
-              <strong>A sala está tranquila</strong>
-              <span>Você será o primeiro a chegar.</span>
+        <div className="voice-room-content">
+          {(socket.message || voice.error) && (
+            <FormMessage message={voice.error || socket.message} />
+          )}
+          {!config?.realtimeEnabled && (
+            <div className="inline-notice" role="status">
+              Presença local ativa. Configure o Cloudflare Realtime para habilitar áudio neste
+              ambiente.
             </div>
           )}
+          <AudioOnlyView participants={socket.participants} userId={user.id} />
         </div>
-      </section>
 
-      <footer className="voice-controls" aria-label="Controles de voz">
-        {voice.status === 'idle' ? (
-          <button
-            className="button primary join-button"
-            type="button"
-            onClick={() => void voice.join()}
-            disabled={!socket.connectionId || !config?.realtimeEnabled}
-          >
-            <MicIcon aria-hidden="true" /> Entrar na voz
-          </button>
-        ) : (
-          <>
+        {voice.status === 'idle' && (
+          <div className="desktop-join-bar">
             <button
-              className={`control-button ${voice.muted ? 'active' : ''}`}
+              className="button primary"
               type="button"
-              onClick={voice.toggleMuted}
-              aria-pressed={voice.muted}
+              onClick={() => void voice.join()}
+              disabled={!socket.connectionId || !config?.realtimeEnabled}
             >
-              {voice.muted ? <MicOffIcon aria-hidden="true" /> : <MicIcon aria-hidden="true" />}
-              <span>{voice.muted ? 'Ativar microfone' : 'Silenciar'}</span>
+              <MicIcon aria-hidden="true" /> Entrar na voz
             </button>
-            <button
-              className={`control-button ${voice.deafened ? 'active' : ''}`}
-              type="button"
-              onClick={voice.toggleDeafened}
-              aria-pressed={voice.deafened}
-            >
-              <HeadphonesIcon aria-hidden="true" />
-              <span>{voice.deafened ? 'Ativar áudio' : 'Desativar áudio'}</span>
-            </button>
-            <label className="device-select">
-              <span>Microfone</span>
-              <select
-                value={voice.selectedDevice}
-                onChange={(event) => void voice.changeMicrophone(event.target.value)}
-              >
-                {voice.devices.map((device, index) => (
-                  <option key={device.deviceId} value={device.deviceId}>
-                    {device.label || `Microfone ${index + 1}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="control-button danger"
-              type="button"
-              onClick={() => void voice.leave()}
-            >
-              <ExitIconLabel />
-              <span>Desconectar</span>
-            </button>
-          </>
+            <p>Ao entrar, seu microfone será solicitado pelo navegador.</p>
+          </div>
         )}
-        <a className="control-button settings-link" href="/settings" onClick={handleInternalLink}>
-          <SettingsIcon aria-hidden="true" />
-          <span>Configurações</span>
-        </a>
-      </footer>
-      <div hidden aria-hidden="true">
-        {voice.remoteStreams.map((remote) => (
-          <RemoteAudio key={remote.id} stream={remote.stream} muted={voice.deafened} />
-        ))}
+        <div hidden aria-hidden="true">
+          {voice.remoteStreams.map((remote) => (
+            <RemoteAudio key={remote.id} stream={remote.stream} muted={voice.deafened} />
+          ))}
+        </div>
       </div>
-    </div>
-  );
-}
-
-function ExitIconLabel() {
-  return (
-    <span className="hangup-icon" aria-hidden="true">
-      ×
-    </span>
+    </AppShell>
   );
 }

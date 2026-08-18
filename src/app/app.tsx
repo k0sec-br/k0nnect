@@ -1,6 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
 
-import { AppShell } from '../components/app-shell';
 import { useAuth } from '../features/auth/auth-context';
 import { navigate, usePathname } from '../lib/navigation';
 import { AppPage } from '../pages/app-page';
@@ -13,7 +12,7 @@ import { SecuritySettingsPage } from '../pages/security-settings-page';
 import { SettingsPage } from '../pages/settings-page';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { loading, logout, user } = useAuth();
+  const { loading, user } = useAuth();
   useEffect(() => {
     if (!loading && !user) navigate('/login');
   }, [loading, user]);
@@ -25,11 +24,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
       </main>
     );
   }
-  return (
-    <AppShell user={user} onLogout={() => void logout().then(() => navigate('/login'))}>
-      {children}
-    </AppShell>
-  );
+  return children;
 }
 
 export function App() {
