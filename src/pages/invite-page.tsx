@@ -35,6 +35,14 @@ export function InvitePage() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (displayName.trim().length < 1 || username.trim().length < 3) {
+      setError('Preencha seu nome e escolha um usuário com pelo menos 3 caracteres.');
+      return;
+    }
+    if (password.length < 12) {
+      setError('Sua senha precisa ter pelo menos 12 caracteres.');
+      return;
+    }
     if (password !== confirmPassword) {
       setError('As senhas digitadas não são iguais.');
       return;
@@ -72,8 +80,8 @@ export function InvitePage() {
     <PublicLayout>
       <section className="auth-panel wide" aria-labelledby="invite-title">
         <div className="auth-heading">
-          <p className="eyebrow">Seu convite chegou</p>
-          <h1 id="invite-title">Crie sua conta</h1>
+          <p className="eyebrow">Convite válido</p>
+          <h1 id="invite-title">Você foi convidado para o k0nnect</h1>
           <p>Precisamos apenas do essencial. Nenhum email ou telefone.</p>
         </div>
         <form onSubmit={(event) => void submit(event)} noValidate>
@@ -133,6 +141,12 @@ export function InvitePage() {
                 placeholder="Digite a mesma senha"
               />
             </div>
+          </div>
+          <div className="password-requirements" aria-live="polite">
+            <span className={password.length >= 12 ? 'is-valid' : ''}>Mínimo de 12 caracteres</span>
+            <span className={password.length > 0 && password === confirmPassword ? 'is-valid' : ''}>
+              Senhas iguais
+            </span>
           </div>
           {challengeRequired && config?.turnstileSiteKey && (
             <TurnstileChallenge

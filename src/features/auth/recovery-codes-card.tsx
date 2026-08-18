@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { FormMessage } from '../../components/form-message';
+import { CheckIcon, CopyIcon, DownloadIcon } from '../../components/icons';
 
 export function RecoveryCodesCard({ codes, onContinue }: { codes: string[]; onContinue(): void }) {
   const [message, setMessage] = useState('');
@@ -30,7 +31,7 @@ export function RecoveryCodesCard({ codes, onContinue }: { codes: string[]; onCo
   return (
     <section className="recovery-card" aria-labelledby="recovery-title">
       <div className="success-mark" aria-hidden="true">
-        ✓
+        <CheckIcon />
       </div>
       <p className="eyebrow">Conta protegida</p>
       <h1 id="recovery-title">Salve seus códigos de recuperação</h1>
@@ -46,10 +47,10 @@ export function RecoveryCodesCard({ codes, onContinue }: { codes: string[]; onCo
       {message && <FormMessage message={message} tone="success" />}
       <div className="button-row">
         <button className="button secondary" type="button" onClick={() => void copyCodes()}>
-          Copiar códigos
+          <CopyIcon aria-hidden="true" /> Copiar códigos
         </button>
         <button className="button secondary" type="button" onClick={downloadCodes}>
-          Baixar .txt
+          <DownloadIcon aria-hidden="true" /> Baixar .txt
         </button>
       </div>
       <button className="button primary full" type="button" onClick={onContinue}>
