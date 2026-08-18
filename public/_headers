@@ -13,3 +13,30 @@
 
 /index.html
   Cache-Control: no-store
+
+/
+  Cache-Control: no-store
+
+/login
+  Cache-Control: no-store
+
+/invite
+  Cache-Control: no-store
+
+/recover
+  Cache-Control: no-store
+
+/security
+  Cache-Control: no-store
+
+/privacy
+  Cache-Control: no-store
+
+/app
+  Cache-Control: no-store
+
+/settings
+  Cache-Control: no-store
+
+/settings/*
+  Cache-Control: no-store
