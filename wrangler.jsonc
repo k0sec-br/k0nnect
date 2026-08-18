@@ -53,12 +53,13 @@
         "REGISTRATION_MODE": "invite",
         "REALTIME_ENABLED": "true",
         "TURNSTILE_ENABLED": "true",
-        "TURNSTILE_SITE_KEY": "",
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAETU0suRQRlL5nSH",
       },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "k0nnect",
+          "database_id": "04754261-c108-4bba-8e03-2768feb543b1",
           "migrations_dir": "migrations",
         },
       ],
