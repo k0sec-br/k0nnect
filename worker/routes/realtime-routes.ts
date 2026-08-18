@@ -22,9 +22,15 @@ realtimeRoutes.post('/session', async (context) => {
   await Promise.all([
     enforceRateLimit(context.env, `ip:${requestIp(context.req.raw)}`, RATE_LIMIT_POLICIES.realtime),
     enforceRateLimit(context.env, authenticated.user.id, RATE_LIMIT_POLICIES.realtime),
-    ...(['publish', 'close', 'unsubscribe'].includes(input.action)
-      ? [enforceRateLimit(context.env, authenticated.user.id, RATE_LIMIT_POLICIES.realtimePublish)]
-      : []),
+    enforceRateLimit(
+      context.env,
+      authenticated.user.id,
+      input.action === 'create'
+        ? RATE_LIMIT_POLICIES.realtimeSession
+        : input.action === 'turn'
+          ? RATE_LIMIT_POLICIES.realtimeTurn
+          : RATE_LIMIT_POLICIES.realtimeMedia,
+    ),
   ]);
 
   const room = context.env.VOICE_ROOMS.getByName(input.roomId);
@@ -107,39 +113,45 @@ realtimeRoutes.post('/session', async (context) => {
   }
 
   if (input.action === 'subscribe') {
-    const resolved = await room.resolvePublication(
+    const resolved = await room.reserveSubscription(
       authenticated.user.id,
       input.connectionId,
+      input.sessionId,
       input.publicationId,
     );
     if (!resolved) throw new AppError('FORBIDDEN', 403);
-    const response = await realtime.subscribeTrack(
-      input.sessionId,
-      resolved.realtimeSessionId,
-      resolved.realtimeTrackName,
-      resolved.publication.source,
-      input.preferredRid,
-    );
-    const mid = response.tracks[0]?.mid;
-    if (!mid || !response.sessionDescription) throw new AppError('MEDIA_UNAVAILABLE', 502);
-    const registered = await room.registerSubscription(
-      authenticated.user.id,
-      input.connectionId,
-      input.sessionId,
-      input.publicationId,
-      mid,
-    );
-    if (!registered) throw new AppError('ROOM_UNAVAILABLE', 409);
-    return success(
-      context,
-      {
-        publication: resolved.publication,
+    try {
+      const response = await realtime.subscribeTrack(
+        input.sessionId,
+        resolved.realtimeSessionId,
+        resolved.realtimeTrackName,
+        resolved.publication.source,
+        input.preferredRid,
+      );
+      const mid = response.tracks[0]?.mid;
+      if (!mid || !response.sessionDescription) throw new AppError('MEDIA_UNAVAILABLE', 502);
+      const completed = await room.completeSubscription(
+        authenticated.user.id,
+        input.connectionId,
+        input.sessionId,
+        input.publicationId,
         mid,
-        sessionDescription: response.sessionDescription,
-        requiresImmediateRenegotiation: response.requiresImmediateRenegotiation ?? false,
-      },
-      201,
-    );
+      );
+      if (!completed) throw new AppError('ROOM_UNAVAILABLE', 409);
+      return success(
+        context,
+        {
+          publication: resolved.publication,
+          mid,
+          sessionDescription: response.sessionDescription,
+          requiresImmediateRenegotiation: response.requiresImmediateRenegotiation ?? false,
+        },
+        201,
+      );
+    } catch (error) {
+      await room.cancelSubscription(authenticated.user.id, input.connectionId, input.publicationId);
+      throw error;
+    }
   }
 
   if (input.action === 'renegotiate') {

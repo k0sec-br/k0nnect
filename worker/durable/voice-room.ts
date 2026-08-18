@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import {
   MAX_WEBSOCKET_INVALID_MESSAGES,
   MAX_WEBSOCKET_MESSAGE_BYTES,
+  SESSION_IDLE_SECONDS,
 } from '../../shared/constants/security';
 import {
   clientRoomMessageSchema,
@@ -12,6 +13,10 @@ import {
   type RoomParticipant,
   type ServerRoomMessage,
 } from '../../shared/protocol/room';
+import { CloudflareRealtimeClient } from '../realtime/cloudflare-realtime';
+
+const SESSION_REVALIDATION_SECONDS = 60;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 interface PublicationRecord extends MediaPublication {
   realtimeSessionId: string;
@@ -22,6 +27,7 @@ interface PublicationRecord extends MediaPublication {
 
 interface ConnectionAttachment {
   connectionId: string;
+  sessionId: string;
   userId: string;
   displayName: string;
   muted: boolean;
@@ -32,8 +38,9 @@ interface ConnectionAttachment {
   messagesInWindow: number;
   lastSpeakingUpdateAt: number;
   realtimeSessionId: string | null;
+  cleanupStarted?: boolean;
   publications: PublicationRecord[];
-  subscriptions: { publicationId: string; mid: string }[];
+  subscriptions: { publicationId: string; mid: string; pending?: boolean }[];
 }
 
 export interface ResolvedPublication {
@@ -77,19 +84,34 @@ function messageSize(message: string | ArrayBuffer): number {
 }
 
 export class VoiceRoom extends DurableObject<Env> {
-  override fetch(request: Request): Response {
+  override async fetch(request: Request): Promise<Response> {
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Upgrade necessário.', { status: 426 });
     }
 
     const userId = request.headers.get('X-K0nnect-User-Id');
+    const sessionId = request.headers.get('X-K0nnect-Session-Id');
     const encodedDisplayName = request.headers.get('X-K0nnect-Display-Name');
-    if (!userId || !encodedDisplayName) return new Response('Não autorizado.', { status: 401 });
+    if (
+      !userId ||
+      !sessionId ||
+      !UUID_PATTERN.test(userId) ||
+      !UUID_PATTERN.test(sessionId) ||
+      !encodedDisplayName
+    ) {
+      return new Response('Não autorizado.', { status: 401 });
+    }
+    if (!(await this.sessionIsActive(sessionId, userId))) {
+      return new Response('Não autorizado.', { status: 401 });
+    }
 
     const displayName = decodeURIComponent(encodedDisplayName);
     for (const existingSocket of this.ctx.getWebSockets(`user:${userId}`)) {
       const existing = existingSocket.deserializeAttachment() as ConnectionAttachment | null;
-      if (existing) this.broadcastUnpublished(existing);
+      if (existing) {
+        this.broadcastUnpublished(existing);
+        this.scheduleRealtimeCleanup(existingSocket, existing);
+      }
       existingSocket.close(4001, 'Conexão substituída');
     }
 
@@ -98,6 +120,7 @@ export class VoiceRoom extends DurableObject<Env> {
     const server = pair[1];
     const attachment: ConnectionAttachment = {
       connectionId: crypto.randomUUID(),
+      sessionId,
       userId,
       displayName,
       muted: false,
@@ -108,11 +131,13 @@ export class VoiceRoom extends DurableObject<Env> {
       messagesInWindow: 0,
       lastSpeakingUpdateAt: 0,
       realtimeSessionId: null,
+      cleanupStarted: false,
       publications: [],
       subscriptions: [],
     };
     server.serializeAttachment(attachment);
     this.ctx.acceptWebSocket(server, [`user:${userId}`, `connection:${attachment.connectionId}`]);
+    await this.ensureSessionAlarm();
 
     this.send(server, {
       v: ROOM_PROTOCOL_VERSION,
@@ -198,6 +223,7 @@ export class VoiceRoom extends DurableObject<Env> {
   override webSocketClose(socket: WebSocket): void {
     const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
     if (!attachment) return;
+    this.scheduleRealtimeCleanup(socket, attachment);
     const replacementIsOpen = this.ctx
       .getWebSockets(`user:${attachment.userId}`)
       .some((candidate) => candidate !== socket && candidate.readyState === WebSocket.OPEN);
@@ -212,6 +238,34 @@ export class VoiceRoom extends DurableObject<Env> {
 
   override webSocketError(socket: WebSocket): void {
     this.webSocketClose(socket);
+  }
+
+  override async alarm(): Promise<void> {
+    const sockets = this.ctx
+      .getWebSockets()
+      .filter((socket) => socket.readyState === WebSocket.OPEN);
+    const validity = await Promise.all(
+      sockets.map(async (socket) => {
+        const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+        return {
+          attachment,
+          active: attachment
+            ? await this.sessionIsActive(attachment.sessionId, attachment.userId)
+            : false,
+        };
+      }),
+    );
+
+    let activeConnections = 0;
+    for (const [index, result] of validity.entries()) {
+      const socket = sockets[index];
+      if (!socket) continue;
+      if (!result.active) socket.close(4003, 'Sessão encerrada');
+      else activeConnections += 1;
+    }
+    if (activeConnections > 0) {
+      await this.ctx.storage.setAlarm(Date.now() + SESSION_REVALIDATION_SECONDS * 1_000);
+    }
   }
 
   hasConnection(userId: string, connectionId: string): boolean {
@@ -300,15 +354,31 @@ export class VoiceRoom extends DurableObject<Env> {
     publicationId: string,
   ): ResolvedPublication | null {
     if (!this.findConnection(userId, connectionId)) return null;
-    for (const socket of this.ctx.getWebSockets()) {
-      if (socket.readyState !== WebSocket.OPEN) continue;
-      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
-      const record = attachment?.publications.find(
-        (item) => item.publicationId === publicationId && !item.pending,
-      );
-      if (attachment?.userId !== userId && record) return this.resolveRecord(record);
+    const publication = this.findRemotePublication(userId, publicationId);
+    return publication ? this.resolveRecord(publication) : null;
+  }
+
+  reserveSubscription(
+    userId: string,
+    connectionId: string,
+    sessionId: string,
+    publicationId: string,
+  ): ResolvedPublication | null {
+    const connection = this.findConnection(userId, connectionId);
+    if (connection?.attachment.realtimeSessionId !== sessionId) return null;
+    if (
+      connection.attachment.subscriptions.some(
+        (subscription) => subscription.publicationId === publicationId,
+      )
+    ) {
+      return null;
     }
-    return null;
+
+    const publication = this.findRemotePublication(userId, publicationId);
+    if (!publication) return null;
+    connection.attachment.subscriptions.push({ publicationId, mid: '', pending: true });
+    connection.socket.serializeAttachment(connection.attachment);
+    return this.resolveRecord(publication);
   }
 
   resolveOwnedPublication(
@@ -353,7 +423,7 @@ export class VoiceRoom extends DurableObject<Env> {
     );
   }
 
-  registerSubscription(
+  completeSubscription(
     userId: string,
     connectionId: string,
     sessionId: string,
@@ -362,14 +432,23 @@ export class VoiceRoom extends DurableObject<Env> {
   ): boolean {
     const connection = this.findConnection(userId, connectionId);
     if (connection?.attachment.realtimeSessionId !== sessionId) return false;
-    connection.attachment.subscriptions = [
-      ...connection.attachment.subscriptions.filter(
-        (subscription) => subscription.publicationId !== publicationId,
-      ),
-      { publicationId, mid },
-    ];
+    const subscription = connection.attachment.subscriptions.find(
+      (item) => item.publicationId === publicationId && item.pending === true,
+    );
+    if (!subscription) return false;
+    subscription.mid = mid;
+    subscription.pending = false;
     connection.socket.serializeAttachment(connection.attachment);
     return true;
+  }
+
+  cancelSubscription(userId: string, connectionId: string, publicationId: string): void {
+    const connection = this.findConnection(userId, connectionId);
+    if (!connection) return;
+    connection.attachment.subscriptions = connection.attachment.subscriptions.filter(
+      (item) => item.publicationId !== publicationId || item.pending !== true,
+    );
+    connection.socket.serializeAttachment(connection.attachment);
   }
 
   takeSubscription(
@@ -381,7 +460,7 @@ export class VoiceRoom extends DurableObject<Env> {
     const connection = this.findConnection(userId, connectionId);
     if (connection?.attachment.realtimeSessionId !== sessionId) return null;
     const subscription = connection.attachment.subscriptions.find(
-      (item) => item.publicationId === publicationId,
+      (item) => item.publicationId === publicationId && item.pending !== true,
     );
     if (!subscription) return null;
     connection.attachment.subscriptions = connection.attachment.subscriptions.filter(
@@ -398,6 +477,21 @@ export class VoiceRoom extends DurableObject<Env> {
       realtimeTrackName: record.realtimeTrackName,
       mid: record.mid,
     };
+  }
+
+  private findRemotePublication(
+    requestingUserId: string,
+    publicationId: string,
+  ): PublicationRecord | null {
+    for (const socket of this.ctx.getWebSockets()) {
+      if (socket.readyState !== WebSocket.OPEN) continue;
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      const publication = attachment?.publications.find(
+        (item) => item.publicationId === publicationId && !item.pending,
+      );
+      if (attachment?.userId !== requestingUserId && publication) return publication;
+    }
+    return null;
   }
 
   private participants(): RoomParticipant[] {
@@ -429,6 +523,54 @@ export class VoiceRoom extends DurableObject<Env> {
       if (attachment?.userId === userId) return { socket, attachment };
     }
     return undefined;
+  }
+
+  private async ensureSessionAlarm(): Promise<void> {
+    if ((await this.ctx.storage.getAlarm()) === null) {
+      await this.ctx.storage.setAlarm(Date.now() + SESSION_REVALIDATION_SECONDS * 1_000);
+    }
+  }
+
+  private async sessionIsActive(sessionId: string, userId: string): Promise<boolean> {
+    if (!UUID_PATTERN.test(sessionId) || !UUID_PATTERN.test(userId)) return false;
+    const now = new Date();
+    const idleCutoff = new Date(now.getTime() - SESSION_IDLE_SECONDS * 1_000).toISOString();
+    const session = await this.env.DB.prepare(
+      `SELECT s.id
+       FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.id = ? AND s.user_id = ? AND s.revoked_at IS NULL
+         AND s.expires_at > ? AND s.last_seen_at > ? AND u.status = 'active'
+       LIMIT 1`,
+    )
+      .bind(sessionId, userId, now.toISOString(), idleCutoff)
+      .first<{ id: string }>();
+    return session !== null;
+  }
+
+  private async cleanupRealtime(attachment: ConnectionAttachment): Promise<void> {
+    if (this.env.REALTIME_ENABLED !== 'true' || !attachment.realtimeSessionId) return;
+    const mids = [
+      ...attachment.publications.map((publication) => publication.mid),
+      ...attachment.subscriptions
+        .filter((subscription) => subscription.pending !== true)
+        .map((subscription) => subscription.mid),
+    ].filter((mid) => mid.length > 0);
+    const realtime = new CloudflareRealtimeClient(this.env);
+    for (const mid of new Set(mids)) {
+      try {
+        await realtime.closeTrack(attachment.realtimeSessionId, mid);
+      } catch {
+        // Cleanup failures must not prevent WebSocket teardown.
+      }
+    }
+  }
+
+  private scheduleRealtimeCleanup(socket: WebSocket, attachment: ConnectionAttachment): void {
+    if (attachment.cleanupStarted) return;
+    attachment.cleanupStarted = true;
+    socket.serializeAttachment(attachment);
+    this.ctx.waitUntil(this.cleanupRealtime(attachment));
   }
 
   private broadcastUnpublished(attachment: ConnectionAttachment): void {

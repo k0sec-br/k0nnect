@@ -43,7 +43,7 @@ export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
       action: z.literal('subscribe'),
       ...sessionOwnerFields,
       publicationId: publicationIdSchema,
-      preferredRid: z.string().min(1).max(16).optional(),
+      preferredRid: z.enum(['a', 'b', 'c']).optional(),
     })
     .strict(),
   z

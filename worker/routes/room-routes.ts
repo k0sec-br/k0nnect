@@ -52,6 +52,7 @@ roomRoutes.get('/:roomId/socket', async (context) => {
     headers: {
       Upgrade: 'websocket',
       'X-K0nnect-User-Id': authenticated.user.id,
+      'X-K0nnect-Session-Id': authenticated.session.id,
       'X-K0nnect-Display-Name': encodeURIComponent(authenticated.user.displayName),
     },
   });

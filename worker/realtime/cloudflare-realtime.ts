@@ -154,6 +154,7 @@ export class CloudflareRealtimeClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ ttl: 3_600 }),
+        signal: AbortSignal.timeout(10_000),
       },
     );
     if (!response.ok) throw new AppError('MEDIA_UNAVAILABLE', 502);
@@ -173,6 +174,7 @@ export class CloudflareRealtimeClient {
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(10_000),
       },
     );
     if (!response.ok) throw new AppError('MEDIA_UNAVAILABLE', 502);
