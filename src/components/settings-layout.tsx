@@ -4,6 +4,7 @@ import { useAuth } from '../features/auth/auth-context';
 import { handleInternalLink, navigate } from '../lib/navigation';
 import { Avatar } from './avatar';
 import { Brand } from './brand';
+import { SettingsCallBar } from './settings-call-bar';
 import {
   CameraIcon,
   ChevronRightIcon,
@@ -179,6 +180,7 @@ export function SettingsLayout({
           {children}
         </div>
       </main>
+      <SettingsCallBar />
     </div>
   );
 }

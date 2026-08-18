@@ -31,14 +31,24 @@ export class CameraManager {
     return this.startOperation;
   }
 
-  async replace(deviceId: string): Promise<MediaStream> {
+  async replace(
+    deviceId: string,
+    applyReplacement: (track: MediaStreamTrack) => Promise<void>,
+  ): Promise<MediaStream> {
     const nextStream = await this.mediaDevices.getUserMedia({
       audio: false,
       video: cameraConstraints(deviceId),
     });
-    if (!nextStream.getVideoTracks()[0]) {
+    const nextTrack = nextStream.getVideoTracks()[0];
+    if (!nextTrack) {
       nextStream.getTracks().forEach((track) => track.stop());
       throw new DOMException('Câmera indisponível', 'NotFoundError');
+    }
+    try {
+      await applyReplacement(nextTrack);
+    } catch (error) {
+      nextStream.getTracks().forEach((track) => track.stop());
+      throw error;
     }
     const previous = this.activeStream;
     this.activeStream = nextStream;

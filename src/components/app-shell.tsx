@@ -2,9 +2,11 @@ import type { ReactNode } from 'react';
 
 import type { MediaPublication, RoomParticipant } from '../../shared/protocol/room';
 import type { SessionUser } from '../../shared/types/api';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { handleInternalLink } from '../lib/navigation';
 import { Avatar, participantState } from './avatar';
 import { Brand } from './brand';
+import { DeviceSelect } from './device-select';
 import { IconButton } from './icon-button';
 import {
   CameraIcon,
@@ -12,12 +14,14 @@ import {
   CloseIcon,
   ExitIcon,
   HeadphonesIcon,
+  HeadphonesOffIcon,
   MicIcon,
   MicOffIcon,
   PlusIcon,
   ScreenShareIcon,
   ScreenShareOffIcon,
   SettingsIcon,
+  SwitchCameraIcon,
   UsersIcon,
   VolumeIcon,
 } from './icons';
@@ -25,10 +29,12 @@ import {
 interface VoiceControls {
   status: string;
   muted: boolean;
+  userMuted: boolean;
   deafened: boolean;
   canJoin: boolean;
   selectedMicrophone: string;
   microphones: MediaDeviceInfo[];
+  cameras: MediaDeviceInfo[];
   cameraState: string;
   screenState: string;
   supportsCamera: boolean;
@@ -39,7 +45,17 @@ interface VoiceControls {
   toggleDeafened(): void;
   changeMicrophone(deviceId: string): void;
   toggleCamera(): void;
+  switchCamera(): void;
   toggleScreenShare(): void;
+}
+
+function microphoneControlLabel(voice: VoiceControls): string {
+  if (voice.deafened) {
+    return voice.userMuted
+      ? 'Ativar microfone ao reativar áudio'
+      : 'Desativar microfone ao reativar áudio';
+  }
+  return voice.userMuted ? 'Ativar microfone' : 'Desativar microfone';
 }
 
 interface AppShellProps {
@@ -89,7 +105,7 @@ function ParticipantLine({
       ) : cameraActive ? (
         <CameraIcon aria-label="Câmera ligada" />
       ) : participant.deafened ? (
-        <HeadphonesIcon aria-label="Áudio desativado" />
+        <HeadphonesOffIcon aria-label="Áudio desativado" />
       ) : participant.muted ? (
         <MicOffIcon aria-label="Microfone desativado" />
       ) : null}
@@ -107,20 +123,15 @@ function VoiceConnectionPanel({ roomName, voice }: { roomName: string; voice: Vo
       </div>
       <div className="voice-connection-actions">
         {voice.microphones.length > 0 && (
-          <label className="compact-device-select">
-            <span>Microfone</span>
-            <select
-              value={voice.selectedMicrophone}
-              onChange={(event) => voice.changeMicrophone(event.target.value)}
-              aria-label="Microfone"
-            >
-              {voice.microphones.map((device, index) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label || `Microfone ${index + 1}`}
-                </option>
-              ))}
-            </select>
-          </label>
+          <DeviceSelect
+            compact
+            devices={voice.microphones}
+            emptyLabel="Nenhum microfone"
+            fallbackLabel="Microfone"
+            label="Microfone"
+            value={voice.selectedMicrophone}
+            onChange={voice.changeMicrophone}
+          />
         )}
         <IconButton label="Desconectar" tone="danger" onClick={voice.leave}>
           <ExitIcon aria-hidden="true" />
@@ -150,7 +161,7 @@ function UserPanel({
       </div>
       <div className="user-actions">
         <IconButton
-          label={voice.muted ? 'Ativar microfone' : 'Silenciar'}
+          label={microphoneControlLabel(voice)}
           className={voice.muted ? 'is-active' : ''}
           aria-pressed={voice.muted}
           onClick={voice.toggleMuted}
@@ -165,42 +176,48 @@ function UserPanel({
           onClick={voice.toggleDeafened}
           disabled={voice.status === 'idle'}
         >
-          <HeadphonesIcon aria-hidden="true" />
-        </IconButton>
-        <IconButton
-          label={voice.cameraState === 'active' ? 'Desativar câmera' : 'Ativar câmera'}
-          className={voice.cameraState === 'active' ? 'is-active' : ''}
-          aria-pressed={voice.cameraState === 'active'}
-          onClick={voice.toggleCamera}
-          disabled={
-            voice.status !== 'connected' ||
-            !voice.supportsCamera ||
-            !['idle', 'active', 'error'].includes(voice.cameraState)
-          }
-        >
-          {voice.cameraState === 'active' ? (
-            <CameraOffIcon aria-hidden="true" />
+          {voice.deafened ? (
+            <HeadphonesOffIcon aria-hidden="true" />
           ) : (
-            <CameraIcon aria-hidden="true" />
+            <HeadphonesIcon aria-hidden="true" />
           )}
         </IconButton>
-        <IconButton
-          label={voice.screenState === 'active' ? 'Parar compartilhamento' : 'Compartilhar tela'}
-          className={voice.screenState === 'active' ? 'is-active' : ''}
-          aria-pressed={voice.screenState === 'active'}
-          onClick={voice.toggleScreenShare}
-          disabled={
-            voice.status !== 'connected' ||
-            !voice.supportsScreenShare ||
-            !['idle', 'active', 'error'].includes(voice.screenState)
-          }
-        >
-          {voice.screenState === 'active' ? (
-            <ScreenShareOffIcon aria-hidden="true" />
-          ) : (
-            <ScreenShareIcon aria-hidden="true" />
-          )}
-        </IconButton>
+        {voice.supportsCamera && (
+          <IconButton
+            label={voice.cameraState === 'active' ? 'Desativar câmera' : 'Ativar câmera'}
+            className={voice.cameraState === 'active' ? 'is-active' : ''}
+            aria-pressed={voice.cameraState === 'active'}
+            onClick={voice.toggleCamera}
+            disabled={
+              voice.status !== 'connected' ||
+              !['idle', 'active', 'error'].includes(voice.cameraState)
+            }
+          >
+            {voice.cameraState === 'active' ? (
+              <CameraOffIcon aria-hidden="true" />
+            ) : (
+              <CameraIcon aria-hidden="true" />
+            )}
+          </IconButton>
+        )}
+        {voice.supportsScreenShare && (
+          <IconButton
+            label={voice.screenState === 'active' ? 'Parar compartilhamento' : 'Compartilhar tela'}
+            className={voice.screenState === 'active' ? 'is-active' : ''}
+            aria-pressed={voice.screenState === 'active'}
+            onClick={voice.toggleScreenShare}
+            disabled={
+              voice.status !== 'connected' ||
+              !['idle', 'active', 'error'].includes(voice.screenState)
+            }
+          >
+            {voice.screenState === 'active' ? (
+              <ScreenShareOffIcon aria-hidden="true" />
+            ) : (
+              <ScreenShareIcon aria-hidden="true" />
+            )}
+          </IconButton>
+        )}
         <a
           className="icon-link"
           href="/settings"
@@ -339,6 +356,7 @@ function MemberSidebar({
 }
 
 export function AppShell(props: AppShellProps) {
+  const mobileLayout = useMediaQuery('(max-width: 767px)');
   return (
     <div className="app-shell">
       <aside className="group-rail" aria-label="Grupos">
@@ -394,87 +412,98 @@ export function AppShell(props: AppShellProps) {
           }}
         />
       )}
-      <div className="mobile-voice-bar" aria-label="Controles de voz">
-        {props.voice.status === 'idle' ? (
-          <button
-            className="button primary"
-            type="button"
-            disabled={!props.voice.canJoin}
-            onClick={props.voice.join}
+      {mobileLayout && (
+        <div className="mobile-voice-bar" aria-label="Controles de voz">
+          {props.voice.status === 'idle' ? (
+            <button
+              className="button primary"
+              type="button"
+              disabled={!props.voice.canJoin}
+              onClick={props.voice.join}
+            >
+              <MicIcon aria-hidden="true" /> Entrar na voz
+            </button>
+          ) : (
+            <>
+              <IconButton
+                label={microphoneControlLabel(props.voice)}
+                className={props.voice.muted ? 'is-active' : ''}
+                aria-pressed={props.voice.muted}
+                onClick={props.voice.toggleMuted}
+              >
+                {props.voice.muted ? (
+                  <MicOffIcon aria-hidden="true" />
+                ) : (
+                  <MicIcon aria-hidden="true" />
+                )}
+              </IconButton>
+              <IconButton
+                label={props.voice.deafened ? 'Ativar áudio' : 'Desativar áudio'}
+                className={props.voice.deafened ? 'is-active' : ''}
+                aria-pressed={props.voice.deafened}
+                onClick={props.voice.toggleDeafened}
+              >
+                {props.voice.deafened ? (
+                  <HeadphonesOffIcon aria-hidden="true" />
+                ) : (
+                  <HeadphonesIcon aria-hidden="true" />
+                )}
+              </IconButton>
+              {props.voice.supportsCamera && (
+                <IconButton
+                  label={
+                    props.voice.cameraState === 'active' ? 'Desativar câmera' : 'Ativar câmera'
+                  }
+                  className={props.voice.cameraState === 'active' ? 'is-active' : ''}
+                  aria-pressed={props.voice.cameraState === 'active'}
+                  onClick={props.voice.toggleCamera}
+                  disabled={!['idle', 'active', 'error'].includes(props.voice.cameraState)}
+                >
+                  {props.voice.cameraState === 'active' ? (
+                    <CameraOffIcon aria-hidden="true" />
+                  ) : (
+                    <CameraIcon aria-hidden="true" />
+                  )}
+                </IconButton>
+              )}
+              {props.voice.cameraState === 'active' && props.voice.cameras.length > 1 && (
+                <IconButton label="Alternar câmera" onClick={props.voice.switchCamera}>
+                  <SwitchCameraIcon aria-hidden="true" />
+                </IconButton>
+              )}
+              {props.voice.supportsScreenShare && (
+                <IconButton
+                  label={
+                    props.voice.screenState === 'active'
+                      ? 'Parar compartilhamento'
+                      : 'Compartilhar tela'
+                  }
+                  className={props.voice.screenState === 'active' ? 'is-active' : ''}
+                  aria-pressed={props.voice.screenState === 'active'}
+                  onClick={props.voice.toggleScreenShare}
+                  disabled={!['idle', 'active', 'error'].includes(props.voice.screenState)}
+                >
+                  {props.voice.screenState === 'active' ? (
+                    <ScreenShareOffIcon aria-hidden="true" />
+                  ) : (
+                    <ScreenShareIcon aria-hidden="true" />
+                  )}
+                </IconButton>
+              )}
+              <IconButton label="Desconectar" tone="danger" onClick={props.voice.leave}>
+                <ExitIcon aria-hidden="true" />
+              </IconButton>
+            </>
+          )}
+          <IconButton
+            label={props.membersOpen ? 'Ocultar participantes' : 'Mostrar participantes'}
+            aria-expanded={props.membersOpen}
+            onClick={() => props.onMembersOpenChange(!props.membersOpen)}
           >
-            <MicIcon aria-hidden="true" /> Entrar na voz
-          </button>
-        ) : (
-          <>
-            <IconButton
-              label={props.voice.muted ? 'Ativar microfone' : 'Silenciar'}
-              className={props.voice.muted ? 'is-active' : ''}
-              aria-pressed={props.voice.muted}
-              onClick={props.voice.toggleMuted}
-            >
-              {props.voice.muted ? (
-                <MicOffIcon aria-hidden="true" />
-              ) : (
-                <MicIcon aria-hidden="true" />
-              )}
-            </IconButton>
-            <IconButton
-              label={props.voice.deafened ? 'Ativar áudio' : 'Desativar áudio'}
-              className={props.voice.deafened ? 'is-active' : ''}
-              aria-pressed={props.voice.deafened}
-              onClick={props.voice.toggleDeafened}
-            >
-              <HeadphonesIcon aria-hidden="true" />
-            </IconButton>
-            <IconButton
-              label={props.voice.cameraState === 'active' ? 'Desativar câmera' : 'Ativar câmera'}
-              className={props.voice.cameraState === 'active' ? 'is-active' : ''}
-              aria-pressed={props.voice.cameraState === 'active'}
-              onClick={props.voice.toggleCamera}
-              disabled={
-                !props.voice.supportsCamera ||
-                !['idle', 'active', 'error'].includes(props.voice.cameraState)
-              }
-            >
-              {props.voice.cameraState === 'active' ? (
-                <CameraOffIcon aria-hidden="true" />
-              ) : (
-                <CameraIcon aria-hidden="true" />
-              )}
-            </IconButton>
-            <IconButton
-              label={
-                props.voice.screenState === 'active'
-                  ? 'Parar compartilhamento'
-                  : 'Compartilhar tela'
-              }
-              className={props.voice.screenState === 'active' ? 'is-active' : ''}
-              aria-pressed={props.voice.screenState === 'active'}
-              onClick={props.voice.toggleScreenShare}
-              disabled={
-                !props.voice.supportsScreenShare ||
-                !['idle', 'active', 'error'].includes(props.voice.screenState)
-              }
-            >
-              {props.voice.screenState === 'active' ? (
-                <ScreenShareOffIcon aria-hidden="true" />
-              ) : (
-                <ScreenShareIcon aria-hidden="true" />
-              )}
-            </IconButton>
-            <IconButton label="Desconectar" tone="danger" onClick={props.voice.leave}>
-              <ExitIcon aria-hidden="true" />
-            </IconButton>
-          </>
-        )}
-        <IconButton
-          label="Mostrar participantes"
-          aria-expanded={props.membersOpen}
-          onClick={() => props.onMembersOpenChange(!props.membersOpen)}
-        >
-          <UsersIcon aria-hidden="true" />
-        </IconButton>
-      </div>
+            <UsersIcon aria-hidden="true" />
+          </IconButton>
+        </div>
+      )}
     </div>
   );
 }

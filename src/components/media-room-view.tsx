@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { RoomParticipant } from '../../shared/protocol/room';
 import type { MediaStreamView } from '../features/voice/use-voice-session';
+import { mediaTrackAspectRatio, shouldMirrorLocalCamera } from '../features/voice/video-layout';
 import { Avatar } from './avatar';
-import { MaximizeIcon } from './icons';
+import { FullscreenButton } from './fullscreen-button';
 import { MediaVideo } from './media-video';
+import { ScreenShareViewport } from './screen-share-viewport';
 
 interface DisplayMedia extends MediaStreamView {
   local: boolean;
@@ -38,17 +40,36 @@ function VideoTile({
   const speaking = participants.some(
     (participant) => participant.userId === media.publication.userId && participant.speaking,
   );
+  const cameraTrack = media.stream.getVideoTracks()[0];
+  const [aspectRatio, setAspectRatio] = useState(
+    () => mediaTrackAspectRatio(cameraTrack) ?? 16 / 9,
+  );
+  useEffect(() => {
+    setAspectRatio(mediaTrackAspectRatio(media.stream.getVideoTracks()[0]) ?? 16 / 9);
+  }, [media.stream]);
   const tileClassName = `media-tile ${compact ? 'is-compact' : ''} ${
-    media.local && media.publication.source === 'camera' ? 'is-local-camera' : ''
+    media.local && media.publication.source === 'camera' && shouldMirrorLocalCamera(cameraTrack)
+      ? 'is-local-camera'
+      : ''
   } ${speaking ? 'is-speaking' : ''}`;
   const content = (
     <>
-      <MediaVideo stream={media.stream} muted={media.local} label={`Vídeo de ${name}`} />
+      <MediaVideo
+        stream={media.stream}
+        muted={media.local}
+        mirrored={
+          media.local &&
+          media.publication.source === 'camera' &&
+          shouldMirrorLocalCamera(cameraTrack)
+        }
+        label={`Vídeo de ${name}`}
+        onAspectRatioChange={setAspectRatio}
+      />
       <span className="media-tile-label">{name}</span>
     </>
   );
   return (
-    <article className={tileClassName} ref={tileRef}>
+    <article className={tileClassName} ref={tileRef} style={{ aspectRatio }}>
       {content}
       <div className="media-tile-actions">
         {onSelect && (
@@ -56,13 +77,7 @@ function VideoTile({
             Focar
           </button>
         )}
-        <button
-          type="button"
-          aria-label={`Exibir vídeo de ${name} em tela cheia`}
-          onClick={() => void tileRef.current?.requestFullscreen()}
-        >
-          <MaximizeIcon aria-hidden="true" />
-        </button>
+        <FullscreenButton targetRef={tileRef} />
       </div>
     </article>
   );
@@ -91,11 +106,19 @@ export function MediaRoomView({
   const screenMedia = videoMedia.filter((item) => item.publication.source === 'screen-video');
   const cameraMedia = videoMedia.filter((item) => item.publication.source === 'camera');
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
+  const [screenAspectRatio, setScreenAspectRatio] = useState(16 / 9);
 
   useEffect(() => {
     if (!screenMedia.some((item) => item.publication.publicationId === selectedScreenId)) {
       setSelectedScreenId(screenMedia[0]?.publication.publicationId ?? null);
     }
+  }, [screenMedia, selectedScreenId]);
+
+  useEffect(() => {
+    const selected = screenMedia.find(
+      (item) => item.publication.publicationId === selectedScreenId,
+    );
+    setScreenAspectRatio(mediaTrackAspectRatio(selected?.stream.getVideoTracks()[0]) ?? 16 / 9);
   }, [screenMedia, selectedScreenId]);
 
   if (screenMedia.length > 0) {
@@ -105,12 +128,19 @@ export function MediaRoomView({
     if (!selected) return null;
     return (
       <section className="screen-share-layout" aria-label="Compartilhamento de tela">
-        <div className="screen-share-stage" ref={stageRef}>
-          <MediaVideo
-            stream={selected.stream}
-            muted={selected.local}
-            label={`Tela de ${participantName(selected, participants, userId)}`}
-          />
+        <div
+          className="screen-share-stage"
+          ref={stageRef}
+          style={{ aspectRatio: screenAspectRatio }}
+        >
+          <ScreenShareViewport streamId={selected.publication.publicationId}>
+            <MediaVideo
+              stream={selected.stream}
+              muted={selected.local}
+              label={`Tela de ${participantName(selected, participants, userId)}`}
+              onAspectRatioChange={setScreenAspectRatio}
+            />
+          </ScreenShareViewport>
           <div className="screen-share-overlay">
             <span>
               {participantName(selected, participants, userId)} está compartilhando
@@ -122,13 +152,7 @@ export function MediaRoomView({
                 ? ' com áudio'
                 : ''}
             </span>
-            <button
-              type="button"
-              aria-label="Exibir compartilhamento em tela cheia"
-              onClick={() => void stageRef.current?.requestFullscreen()}
-            >
-              <MaximizeIcon aria-hidden="true" />
-            </button>
+            <FullscreenButton targetRef={stageRef} />
           </div>
         </div>
         {(screenMedia.length > 1 || cameraMedia.length > 0) && (

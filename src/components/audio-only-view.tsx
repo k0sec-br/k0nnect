@@ -1,6 +1,6 @@
 import type { RoomParticipant } from '../../shared/protocol/room';
 import { Avatar, participantState } from './avatar';
-import { HeadphonesIcon, MicOffIcon, VolumeIcon } from './icons';
+import { HeadphonesOffIcon, MicOffIcon, VolumeIcon } from './icons';
 
 export function AudioOnlyView({
   participants,
@@ -49,7 +49,7 @@ export function AudioOnlyView({
                 </div>
                 <div className="voice-participant-state">
                   {participant.deafened ? (
-                    <HeadphonesIcon aria-label="Áudio desativado" />
+                    <HeadphonesOffIcon aria-label="Áudio desativado" />
                   ) : participant.muted ? (
                     <MicOffIcon aria-label="Microfone desativado" />
                   ) : participant.speaking ? (

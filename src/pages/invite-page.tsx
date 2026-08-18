@@ -24,6 +24,9 @@ export function InvitePage() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [challengeRequired, setChallengeRequired] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
+  const confirmationStarted = confirmPassword.length > 0;
+  const passwordsMatch = password === confirmPassword;
+  const passwordsAreValid = passwordsMatch && password.length >= 12;
 
   if (recoveryCodes) {
     return (
@@ -125,7 +128,14 @@ export function InvitePage() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="No mínimo 12 caracteres"
+                aria-describedby="password-requirement"
               />
+              <span
+                id="password-requirement"
+                className={`field-helper ${password.length >= 12 ? 'is-valid' : ''}`}
+              >
+                Mínimo de 12 caracteres
+              </span>
             </div>
             <div>
               <label htmlFor="confirm-password">Repita a senha</label>
@@ -139,14 +149,23 @@ export function InvitePage() {
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 placeholder="Digite a mesma senha"
+                aria-describedby="password-confirmation-feedback"
+                aria-invalid={confirmationStarted && !passwordsMatch}
               />
+              <span
+                id="password-confirmation-feedback"
+                className={`field-helper ${passwordsAreValid ? 'is-valid' : 'is-error'}`}
+                aria-live="polite"
+              >
+                {confirmationStarted
+                  ? passwordsMatch
+                    ? passwordsAreValid
+                      ? 'Senhas iguais'
+                      : ''
+                    : 'As senhas não coincidem.'
+                  : ''}
+              </span>
             </div>
-          </div>
-          <div className="password-requirements" aria-live="polite">
-            <span className={password.length >= 12 ? 'is-valid' : ''}>Mínimo de 12 caracteres</span>
-            <span className={password.length > 0 && password === confirmPassword ? 'is-valid' : ''}>
-              Senhas iguais
-            </span>
           </div>
           {challengeRequired && config?.turnstileSiteKey && (
             <TurnstileChallenge
@@ -157,7 +176,7 @@ export function InvitePage() {
           )}
           {error && <FormMessage message={error} />}
           <AsyncButton className="button primary full" type="submit" loading={loading}>
-            Criar conta privada
+            Criar conta
           </AsyncButton>
         </form>
         <p className="privacy-copy">

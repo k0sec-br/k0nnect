@@ -16,21 +16,6 @@
   min-height: 4.75rem;
   border-bottom: 1px solid var(--border-default);
 }
-.public-security-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-}
-.public-security-label > span {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--success);
-}
 .public-main {
   display: grid;
   width: min(100% - 3rem, 76rem);
@@ -131,15 +116,20 @@
   grid-template-columns: 1fr 1fr;
   gap: 0.9rem 0.8rem;
 }
-.password-requirements {
-  display: flex;
-  gap: 0.5rem 1rem;
-  margin: -0.15rem 0 0.25rem;
+.field-helper {
+  display: block;
+  min-height: 1rem;
+  margin-top: 0.4rem;
   color: var(--text-tertiary);
   font-size: 0.76rem;
+  line-height: 1.3;
+  text-align: left;
 }
-.password-requirements span.is-valid {
+.field-helper.is-valid {
   color: var(--success);
+}
+.field-helper.is-error {
+  color: var(--danger-text);
 }
 .recovery-card {
   max-width: 34rem;
@@ -223,9 +213,6 @@
   }
   .public-header {
     min-height: 4rem;
-  }
-  .public-security-label {
-    font-size: 0.64rem;
   }
   .public-introduction {
     padding-top: 1rem;

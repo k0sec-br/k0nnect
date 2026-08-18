@@ -42,6 +42,14 @@ export function HeadphonesIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function HeadphonesOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m3 3 18 18M4 14v-2a8 8 0 0 1 1.5-4.7M8.2 4.9A8 8 0 0 1 20 12v2M4 14h3v5M20 14h-3v3M6 21H5a1 1 0 0 1-1-1v-6M20 14v6a1 1 0 0 1-1 1" />
+    </Icon>
+  );
+}
+
 export function VolumeIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
@@ -120,6 +128,14 @@ export function ChevronRightIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Icon>
+  );
+}
+
 export function CloseIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
@@ -179,6 +195,15 @@ export function CameraOffIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function SwitchCameraIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M8 7h8l2 3h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h2l2-3Z" />
+      <path d="M9 13a3.5 3.5 0 0 1 6-1M15 16a3.5 3.5 0 0 1-6 1M15 10v2h-2M9 19v-2h2" />
+    </Icon>
+  );
+}
+
 export function ScreenShareIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
@@ -200,6 +225,14 @@ export function MaximizeIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
       <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+    </Icon>
+  );
+}
+
+export function MinimizeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M8 3v5H3M16 3v5h5M8 21v-5H3M16 21v-5h5" />
     </Icon>
   );
 }

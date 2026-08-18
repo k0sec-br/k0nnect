@@ -7,6 +7,12 @@ import { mediaErrorMessage } from './media-errors';
 import { MediaStatsCollector, type MediaStatsSnapshot } from './media-stats';
 import { MediaSessionManager, type RemoteMediaTrack } from './media-session-manager';
 import { startSpeakingDetector } from './speaking-detector';
+import {
+  effectiveMuted,
+  INITIAL_VOICE_CONTROL_STATE,
+  reduceVoiceControlState,
+  type VoiceControlAction,
+} from './voice-control-state';
 
 export type TrackLifecycleState =
   'idle' | 'requesting-permission' | 'starting' | 'publishing' | 'active' | 'stopping' | 'error';
@@ -48,11 +54,11 @@ export function useVoiceSession({
   const cameraManagerRef = useRef<CameraManager | null>(null);
   const screenShareManagerRef = useRef<ScreenShareManager | null>(null);
   const statsCollectorRef = useRef<MediaStatsCollector | null>(null);
+  const voiceControlsRef = useRef(INITIAL_VOICE_CONTROL_STATE);
 
   const [status, setStatus] = useState<'connected' | 'idle' | 'joining' | 'reconnecting'>('idle');
   const [error, setError] = useState('');
-  const [muted, setMutedState] = useState(false);
-  const [deafened, setDeafenedState] = useState(false);
+  const [voiceControls, setVoiceControls] = useState(INITIAL_VOICE_CONTROL_STATE);
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicrophone, setSelectedMicrophone] = useState(selectedMicrophoneRef.current);
@@ -171,7 +177,7 @@ export function useVoiceSession({
       activeConnectionIdRef.current = targetConnectionId;
       try {
         const track = await client.start(selectedMicrophoneRef.current || undefined);
-        client.setMuted(muted);
+        client.setMuted(effectiveMuted(voiceControlsRef.current));
         attachDetector(track);
         await refreshDevices();
         reconnectAttemptRef.current = 0;
@@ -191,7 +197,7 @@ export function useVoiceSession({
         setError(mediaErrorMessage(caught));
       }
     },
-    [attachDetector, muted, refreshDevices, removeRemoteMedia, roomId],
+    [attachDetector, refreshDevices, removeRemoteMedia, roomId],
   );
 
   useEffect(() => {
@@ -225,8 +231,8 @@ export function useVoiceSession({
     cameraManagerRef.current?.stop();
     screenShareManagerRef.current?.stop();
     setStatus('idle');
-    setMutedState(false);
-    setDeafenedState(false);
+    voiceControlsRef.current = INITIAL_VOICE_CONTROL_STATE;
+    setVoiceControls(INITIAL_VOICE_CONTROL_STATE);
     updatePresence(false, false);
     if (client) await client.stop();
   }, [updatePresence]);
@@ -280,33 +286,47 @@ export function useVoiceSession({
     [],
   );
 
-  const toggleMuted = useCallback(() => {
-    const nextMuted = !muted;
-    setMutedState(nextMuted);
-    clientRef.current?.setMuted(nextMuted);
-    updatePresence(nextMuted, deafened);
-  }, [deafened, muted, updatePresence]);
+  const applyVoiceControl = useCallback(
+    (action: VoiceControlAction) => {
+      const next = reduceVoiceControlState(voiceControlsRef.current, action);
+      voiceControlsRef.current = next;
+      setVoiceControls(next);
+      const nextEffectiveMuted = effectiveMuted(next);
+      clientRef.current?.setMuted(nextEffectiveMuted);
+      updatePresence(nextEffectiveMuted, next.deafened);
+    },
+    [updatePresence],
+  );
 
-  const toggleDeafened = useCallback(() => {
-    const nextDeafened = !deafened;
-    const nextMuted = nextDeafened ? true : muted;
-    setDeafenedState(nextDeafened);
-    setMutedState(nextMuted);
-    clientRef.current?.setMuted(nextMuted);
-    updatePresence(nextMuted, nextDeafened);
-  }, [deafened, muted, updatePresence]);
+  const toggleMuted = useCallback(
+    () => applyVoiceControl({ type: 'toggle-user-muted' }),
+    [applyVoiceControl],
+  );
+
+  const toggleDeafened = useCallback(
+    () => applyVoiceControl({ type: 'toggle-deafened' }),
+    [applyVoiceControl],
+  );
 
   const changeMicrophone = useCallback(
     async (deviceId: string) => {
-      selectedMicrophoneRef.current = deviceId;
-      setSelectedMicrophone(deviceId);
-      mediaDevicePreferences.setMicrophone(deviceId);
-      if (!clientRef.current) return;
+      const client = clientRef.current;
+      if (!client) {
+        selectedMicrophoneRef.current = deviceId;
+        setSelectedMicrophone(deviceId);
+        mediaDevicePreferences.setMicrophone(deviceId);
+        return;
+      }
       try {
-        const track = await clientRef.current.changeMicrophone(deviceId);
+        const track = await client.changeMicrophone(deviceId);
+        client.setMuted(effectiveMuted(voiceControlsRef.current));
         attachDetector(track);
-      } catch (caught) {
-        setError(mediaErrorMessage(caught));
+        selectedMicrophoneRef.current = deviceId;
+        setSelectedMicrophone(deviceId);
+        mediaDevicePreferences.setMicrophone(deviceId);
+        setError('');
+      } catch {
+        setError('Não foi possível usar este microfone. O dispositivo anterior continua ativo.');
       }
     },
     [attachDetector],
@@ -374,16 +394,20 @@ export function useVoiceSession({
 
   const changeCamera = useCallback(
     async (deviceId: string) => {
-      selectedCameraRef.current = deviceId;
-      setSelectedCamera(deviceId);
-      mediaDevicePreferences.setCamera(deviceId);
-      if (!clientRef.current || cameraState !== 'active') return;
+      const client = clientRef.current;
+      if (!client || cameraState !== 'active') {
+        selectedCameraRef.current = deviceId;
+        setSelectedCamera(deviceId);
+        mediaDevicePreferences.setCamera(deviceId);
+        return;
+      }
       try {
         cameraManagerRef.current ??= new CameraManager();
-        const stream = await cameraManagerRef.current.replace(deviceId);
+        const stream = await cameraManagerRef.current.replace(deviceId, (replacement) =>
+          client.replaceLocalTrack('camera', replacement),
+        );
         const replacement = stream.getVideoTracks()[0];
         if (!replacement) throw new DOMException('Câmera indisponível', 'NotFoundError');
-        await clientRef.current.replaceLocalTrack('camera', replacement);
         setLocalMedia((current) =>
           current.map((item) =>
             item.publication.source === 'camera'
@@ -391,12 +415,25 @@ export function useVoiceSession({
               : item,
           ),
         );
-      } catch (caught) {
-        setError(mediaErrorMessage(caught, 'câmera'));
+        selectedCameraRef.current = deviceId;
+        setSelectedCamera(deviceId);
+        mediaDevicePreferences.setCamera(deviceId);
+        setError('');
+      } catch {
+        setError('Não foi possível usar esta câmera. O dispositivo anterior continua ativo.');
       }
     },
     [cameraState],
   );
+
+  const switchCamera = useCallback(async () => {
+    if (cameras.length < 2) return;
+    const currentDeviceId =
+      cameraManagerRef.current?.currentTrack()?.getSettings().deviceId ?? selectedCameraRef.current;
+    const currentIndex = cameras.findIndex((device) => device.deviceId === currentDeviceId);
+    const nextCamera = cameras[(currentIndex + 1 + cameras.length) % cameras.length];
+    if (nextCamera) await changeCamera(nextCamera.deviceId);
+  }, [cameras, changeCamera]);
 
   const stopScreenShare = useCallback(async () => {
     if (!clientRef.current || screenStoppingRef.current) return;
@@ -489,14 +526,14 @@ export function useVoiceSession({
     cameras,
     changeCamera,
     changeMicrophone,
-    deafened,
+    deafened: voiceControls.deafened,
     debugStats,
     error,
     join,
     leave,
     localMedia,
     microphones,
-    muted,
+    muted: effectiveMuted(voiceControls),
     remoteMedia,
     screenState,
     selectedCamera,
@@ -506,9 +543,11 @@ export function useVoiceSession({
     status,
     stopCamera,
     stopScreenShare,
+    switchCamera,
     supportsCamera: Boolean(navigator.mediaDevices?.getUserMedia),
     supportsScreenShare: Boolean(navigator.mediaDevices?.getDisplayMedia),
     toggleDeafened,
     toggleMuted,
+    userMuted: voiceControls.userMuted,
   };
 }

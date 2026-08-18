@@ -48,7 +48,7 @@ export function LoginPage() {
     <PublicLayout>
       <section className="auth-panel" aria-labelledby="login-title">
         <div className="auth-heading">
-          <p className="eyebrow">Comunicação privada</p>
+          <p className="eyebrow">Acesso à comunidade</p>
           <h1 id="login-title">Bem-vindo de volta</h1>
           <p>Entre para conversar com sua comunidade em tempo real.</p>
         </div>

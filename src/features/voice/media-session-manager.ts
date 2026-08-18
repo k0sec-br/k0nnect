@@ -222,7 +222,6 @@ export class MediaSessionManager {
   async replaceLocalTrack(source: MediaSource, replacement: MediaStreamTrack): Promise<void> {
     const publication = this.localPublications.get(source);
     if (!publication) {
-      replacement.stop();
       throw new DOMException('Mídia indisponível', 'InvalidStateError');
     }
     await publication.sender.replaceTrack(replacement);
@@ -241,8 +240,16 @@ export class MediaSessionManager {
       video: false,
     });
     const replacement = stream.getAudioTracks()[0];
-    if (!replacement) throw new DOMException('Microfone indisponível', 'NotFoundError');
-    await this.replaceLocalTrack('microphone', replacement);
+    if (!replacement) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw new DOMException('Microfone indisponível', 'NotFoundError');
+    }
+    try {
+      await this.replaceLocalTrack('microphone', replacement);
+    } catch (error) {
+      replacement.stop();
+      throw error;
+    }
     return replacement;
   }
 

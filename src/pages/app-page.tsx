@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-import type { RoomView } from '../../shared/types/api';
 import { AppShell } from '../components/app-shell';
 import { AudioOnlyView } from '../components/audio-only-view';
 import { FormMessage } from '../components/form-message';
@@ -10,35 +9,21 @@ import { MediaDebugPanel } from '../components/media-debug-panel';
 import { MenuIcon, MicIcon, UsersIcon, VolumeIcon } from '../components/icons';
 import { RemoteAudio } from '../components/remote-audio';
 import { useAuth } from '../features/auth/auth-context';
-import { useRoomSocket } from '../features/rooms/use-room-socket';
-import { useVoiceSession } from '../features/voice/use-voice-session';
-import { usePublicConfig } from '../hooks/use-public-config';
-import { apiClient } from '../lib/api-client';
+import { useCall } from '../features/call/call-context';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { navigate } from '../lib/navigation';
 
 export function AppPage() {
   const { logout, user } = useAuth();
-  const config = usePublicConfig();
-  const [room, setRoom] = useState<RoomView | null>(null);
-  const [loadError, setLoadError] = useState('');
+  const { activateRoom, config, loadError, room, socket, voice } = useCall();
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const membersAreOptional = useMediaQuery('(max-width: 1199px)');
+  const mobileLayout = useMediaQuery('(max-width: 767px)');
 
   useEffect(() => {
-    apiClient
-      .get<{ rooms: RoomView[] }>('/api/rooms')
-      .then((result) => setRoom(result.rooms[0] ?? null))
-      .catch(() => setLoadError('Não foi possível carregar as salas agora.'));
-  }, []);
-
-  const socket = useRoomSocket(room?.id ?? null);
-  const voice = useVoiceSession({
-    roomId: room?.id ?? 'room_general',
-    connectionId: socket.connectionId,
-    publications: socket.publications.filter((publication) => publication.userId !== user?.id),
-    updatePresence: socket.updatePresence,
-    updateSpeaking: socket.updateSpeaking,
-  });
+    activateRoom();
+  }, [activateRoom]);
 
   if (!user) return null;
   if (!room) {
@@ -56,11 +41,13 @@ export function AppPage() {
   const shellVoice = {
     status: voice.status,
     muted: voice.muted,
+    userMuted: voice.userMuted,
     deafened: voice.deafened,
     canJoin: Boolean(socket.connectionId && config?.realtimeEnabled),
     selectedMicrophone: voice.selectedMicrophone,
     microphones: voice.microphones,
     cameraState: voice.cameraState,
+    cameras: voice.cameras,
     screenState: voice.screenState,
     supportsCamera: voice.supportsCamera,
     supportsScreenShare: voice.supportsScreenShare,
@@ -71,6 +58,7 @@ export function AppPage() {
     changeMicrophone: (deviceId: string) => void voice.changeMicrophone(deviceId),
     toggleCamera: () =>
       void (voice.cameraState === 'active' ? voice.stopCamera() : voice.startCamera()),
+    switchCamera: () => void voice.switchCamera(),
     toggleScreenShare: () =>
       void (voice.screenState === 'active' ? voice.stopScreenShare() : voice.startScreenShare()),
   };
@@ -91,14 +79,16 @@ export function AppPage() {
     >
       <div className="voice-room">
         <header className="main-header">
-          <IconButton
-            label="Mostrar canais"
-            className="mobile-menu-button"
-            aria-expanded={channelsOpen}
-            onClick={() => setChannelsOpen(!channelsOpen)}
-          >
-            <MenuIcon aria-hidden="true" />
-          </IconButton>
+          {mobileLayout && (
+            <IconButton
+              label="Mostrar canais"
+              className="mobile-menu-button"
+              aria-expanded={channelsOpen}
+              onClick={() => setChannelsOpen(!channelsOpen)}
+            >
+              <MenuIcon aria-hidden="true" />
+            </IconButton>
+          )}
           <div className="main-header-title">
             <VolumeIcon aria-hidden="true" />
             <h1>{room.name}</h1>
@@ -111,14 +101,16 @@ export function AppPage() {
                 ? 'Sem conexão'
                 : 'Reconectando…'}
           </span>
-          <IconButton
-            label="Mostrar participantes"
-            className="members-toggle"
-            aria-expanded={membersOpen}
-            onClick={() => setMembersOpen(!membersOpen)}
-          >
-            <UsersIcon aria-hidden="true" />
-          </IconButton>
+          {membersAreOptional && (
+            <IconButton
+              label={membersOpen ? 'Ocultar participantes' : 'Mostrar participantes'}
+              className="members-toggle"
+              aria-expanded={membersOpen}
+              onClick={() => setMembersOpen(!membersOpen)}
+            >
+              <UsersIcon aria-hidden="true" />
+            </IconButton>
+          )}
         </header>
 
         <div className="voice-room-content">

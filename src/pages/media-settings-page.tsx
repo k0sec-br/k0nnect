@@ -1,39 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { DeviceSelect } from '../components/device-select';
 import { MediaVideo } from '../components/media-video';
 import { SettingsLayout } from '../components/settings-layout';
-import {
-  cameraConstraints,
-  mediaDevicePreferences,
-} from '../features/voice/media-device-preferences';
+import { useCall } from '../features/call/call-context';
+import { cameraConstraints } from '../features/voice/media-device-preferences';
 import { mediaErrorMessage } from '../features/voice/media-errors';
 
 export function MediaSettingsPage() {
-  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-  const [microphoneId, setMicrophoneId] = useState(mediaDevicePreferences.microphone());
-  const [cameraId, setCameraId] = useState(mediaDevicePreferences.camera());
+  const { voice } = useCall();
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [error, setError] = useState('');
-
-  const refreshDevices = useCallback(async () => {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const nextMicrophones = devices.filter((device) => device.kind === 'audioinput');
-    const nextCameras = devices.filter((device) => device.kind === 'videoinput');
-    setMicrophones(nextMicrophones);
-    setCameras(nextCameras);
-    setMicrophoneId((current) =>
-      current.length > 0 ? current : (nextMicrophones[0]?.deviceId ?? ''),
-    );
-    setCameraId((current) => (current.length > 0 ? current : (nextCameras[0]?.deviceId ?? '')));
-  }, []);
-
-  useEffect(() => {
-    void refreshDevices();
-    const handleDeviceChange = () => void refreshDevices();
-    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
-    return () => navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
-  }, [refreshDevices]);
+  const activeCamera = voice.localMedia.find(
+    (media) => media.publication.source === 'camera',
+  )?.stream;
+  const displayedPreview = activeCamera ?? preview;
 
   useEffect(
     () => () => {
@@ -55,14 +36,13 @@ export function MediaSettingsPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: cameraConstraints(cameraId || undefined),
+        video: cameraConstraints(voice.selectedCamera || undefined),
       });
       setPreview(stream);
-      await refreshDevices();
     } catch (caught) {
       setError(mediaErrorMessage(caught, 'câmera'));
     }
-  }, [cameraId, refreshDevices, stopPreview]);
+  }, [stopPreview, voice.selectedCamera]);
 
   return (
     <SettingsLayout active="media">
@@ -70,65 +50,53 @@ export function MediaSettingsPage() {
         <header className="settings-section-header">
           <span className="eyebrow">Dispositivos</span>
           <h2 id="voice-video-title">Voz e vídeo</h2>
-          <p>Escolha os dispositivos usados ao entrar em uma chamada.</p>
+          <p>Escolha os dispositivos usados na chamada e nas próximas conexões.</p>
         </header>
         <div className="media-settings-fields">
-          <label>
-            Microfone
-            <select
-              value={microphoneId}
-              onChange={(event) => {
-                setMicrophoneId(event.target.value);
-                mediaDevicePreferences.setMicrophone(event.target.value);
-              }}
-            >
-              {microphones.map((device, index) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label || `Microfone ${index + 1}`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Câmera
-            <select
-              value={cameraId}
-              onChange={(event) => {
-                setCameraId(event.target.value);
-                mediaDevicePreferences.setCamera(event.target.value);
-                stopPreview();
-              }}
-            >
-              {cameras.map((device, index) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label || `Câmera ${index + 1}`}
-                </option>
-              ))}
-            </select>
-          </label>
+          <DeviceSelect
+            devices={voice.microphones}
+            emptyLabel="Nenhum microfone disponível"
+            fallbackLabel="Microfone"
+            label="Microfone"
+            value={voice.selectedMicrophone}
+            onChange={(deviceId) => void voice.changeMicrophone(deviceId)}
+          />
+          <DeviceSelect
+            devices={voice.cameras}
+            emptyLabel="Nenhuma câmera disponível"
+            fallbackLabel="Câmera"
+            label="Câmera"
+            value={voice.selectedCamera}
+            onChange={(deviceId) => {
+              stopPreview();
+              void voice.changeCamera(deviceId);
+            }}
+          />
         </div>
         <div className="camera-preview">
-          {preview ? (
-            <MediaVideo stream={preview} muted label="Prévia da câmera" />
+          {displayedPreview ? (
+            <MediaVideo stream={displayedPreview} muted label="Prévia da câmera" />
           ) : (
             <div className="camera-preview-placeholder">
               A prévia permanece desligada até você iniciar.
             </div>
           )}
         </div>
-        {error && (
+        {(error || voice.error) && (
           <p className="field-error" role="alert">
-            {error}
+            {error || voice.error}
           </p>
         )}
         <div className="settings-actions">
-          <button
-            className="button secondary"
-            type="button"
-            onClick={preview ? stopPreview : startPreview}
-          >
-            {preview ? 'Parar prévia' : 'Iniciar prévia'}
-          </button>
+          {!activeCamera && (
+            <button
+              className="button secondary"
+              type="button"
+              onClick={preview ? stopPreview : startPreview}
+            >
+              {preview ? 'Parar prévia' : 'Iniciar prévia'}
+            </button>
+          )}
         </div>
       </section>
     </SettingsLayout>

@@ -4,7 +4,7 @@ export function PublicSecurityPage() {
   return (
     <PublicLayout>
       <article className="legal-page">
-        <p className="eyebrow">Segurança por padrão</p>
+        <p className="eyebrow">Controles de acesso</p>
         <h1>Como protegemos o k0nnect</h1>
         <p className="legal-lead">
           Convites de uso único, senhas derivadas com PBKDF2, sessões opacas e autorização no
