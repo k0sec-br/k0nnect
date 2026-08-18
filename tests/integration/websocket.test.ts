@@ -1,4 +1,5 @@
 import { env, exports } from 'cloudflare:workers';
+import { runDurableObjectAlarm } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ROOM_PROTOCOL_VERSION, type ServerRoomMessage } from '../../shared/protocol/room';
@@ -81,6 +82,18 @@ describe('sala em tempo real', () => {
       },
     );
     expect(missingRoom.status).toBe(404);
+
+    const directDurableObject = await env.VOICE_ROOMS.getByName('room_general').fetch(
+      new Request('http://voice-room.internal', {
+        headers: {
+          Upgrade: 'websocket',
+          'X-K0nnect-User-Id': crypto.randomUUID(),
+          'X-K0nnect-Session-Id': crypto.randomUUID(),
+          'X-K0nnect-Display-Name': 'Forged',
+        },
+      }),
+    );
+    expect(directDurableObject.status).toBe(401);
   });
 
   it('propaga join, presença autoritativa, leave e reconexão sem duplicar usuário', async () => {
@@ -158,6 +171,18 @@ describe('sala em tempo real', () => {
     expect((await closed).code).toBe(1009);
   });
 
+  it('encerra WebSocket existente quando a sessão é revogada', async () => {
+    const connection = await connect(await createAccount('alice', 'Alice'));
+    const closed = nextClose(connection.socket);
+    await env.DB.prepare('UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL')
+      .bind(new Date().toISOString())
+      .run();
+
+    const alarmRan = await runDurableObjectAlarm(env.VOICE_ROOMS.getByName('room_general'));
+    expect(alarmRan).toBe(true);
+    expect((await closed).code).toBe(4003);
+  });
+
   it('autoriza publicações por ID opaco e aplica limites por fonte e sala', async () => {
     const alice = await connect(await createAccount('alice', 'Alice'));
     const bob = await connect(await createAccount('bob', 'Bob'));
@@ -179,6 +204,9 @@ describe('sala em tempo real', () => {
         alice.ready.payload.connectionId,
         'alice_session',
       ),
+    ).toBe(true);
+    expect(
+      await room.registerRealtimeSession(bobUserId, bob.ready.payload.connectionId, 'bob_session'),
     ).toBe(true);
     const publicationId = await room.reservePublication(
       aliceUserId,
@@ -213,6 +241,38 @@ describe('sala em tempo real', () => {
     );
     expect(resolved?.publication.publicationId).toBe(publicationId);
     expect(resolved?.realtimeTrackName).toBe('internal_track_name');
+    const subscriptionReservations = await Promise.all([
+      room.reserveSubscription(
+        bobUserId,
+        bob.ready.payload.connectionId,
+        'bob_session',
+        publicationId,
+      ),
+      room.reserveSubscription(
+        bobUserId,
+        bob.ready.payload.connectionId,
+        'bob_session',
+        publicationId,
+      ),
+    ]);
+    expect(subscriptionReservations.filter(Boolean)).toHaveLength(1);
+    expect(
+      await room.completeSubscription(
+        bobUserId,
+        bob.ready.payload.connectionId,
+        'bob_session',
+        publicationId,
+        'remote-mid-1',
+      ),
+    ).toBe(true);
+    expect(
+      await room.takeSubscription(
+        bobUserId,
+        bob.ready.payload.connectionId,
+        'bob_session',
+        publicationId,
+      ),
+    ).toBe('remote-mid-1');
     expect(
       await room.resolvePublication(aliceUserId, alice.ready.payload.connectionId, publicationId),
     ).toBeNull();
@@ -220,6 +280,14 @@ describe('sala em tempo real', () => {
       await env.VOICE_ROOMS.getByName('other_room').resolvePublication(
         bobUserId,
         bob.ready.payload.connectionId,
+        publicationId,
+      ),
+    ).toBeNull();
+    expect(
+      await env.VOICE_ROOMS.getByName('other_room').reserveSubscription(
+        bobUserId,
+        bob.ready.payload.connectionId,
+        'bob_session',
         publicationId,
       ),
     ).toBeNull();

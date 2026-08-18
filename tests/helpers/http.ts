@@ -13,7 +13,7 @@ export async function apiRequest(
   if (!headers.has('CF-Connecting-IP')) {
     headers.set('CF-Connecting-IP', `198.51.100.${requestCounter % 250}`);
   }
-  if (init.body) headers.set('Content-Type', 'application/json');
+  if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   if (init.cookie) headers.set('Cookie', init.cookie);
   if (init.csrfToken) headers.set('X-CSRF-Token', init.csrfToken);
   return exports.default.fetch(`http://localhost:5173${path}`, { ...init, headers });

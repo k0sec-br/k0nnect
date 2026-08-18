@@ -23,12 +23,14 @@
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
+    "test:security": "vitest run tests/integration/security.test.ts tests/integration/auth-hardening.test.ts tests/integration/database-security.test.ts tests/integration/websocket.test.ts tests/unit/crypto.test.ts tests/unit/schemas.test.ts tests/unit/turnstile.test.ts tests/unit/cloudflare-realtime.test.ts",
     "test:e2e": "playwright test",
     "db:migrate:local": "wrangler d1 migrations apply k0nnect --local",
     "db:migrate:remote": "wrangler d1 migrations apply k0nnect --remote --env production",
     "setup:local": "tsx scripts/setup-local.ts",
     "invite:create": "tsx scripts/create-invite.ts",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm types:worker:check && pnpm test && pnpm build",
+    "types:worker:check": "wrangler types --check",
     "audit:dependencies": "pnpm audit --audit-level high"
   },
   "dependencies": {

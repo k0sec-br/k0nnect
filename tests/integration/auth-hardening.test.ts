@@ -24,7 +24,7 @@ async function createAccount(username = 'alice') {
 describe('endurecimento de autenticação e sessão', () => {
   beforeEach(resetDatabase);
 
-  it('recusa username duplicado sem consumir o segundo convite', async () => {
+  it('recusa username duplicado e encerra o convite para impedir enumeração repetida', async () => {
     await createAccount();
     const secondToken = await seedInvite();
     const duplicate = await apiRequest('/api/auth/register-invite', {
@@ -36,11 +36,26 @@ describe('endurecimento de autenticação e sessão', () => {
         password: PASSWORD,
       }),
     });
-    expect(duplicate.status).toBe(409);
+    expect(duplicate.status).toBe(400);
     const unusedInvites = await env.DB.prepare(
-      'SELECT COUNT(*) AS total FROM invites WHERE used_at IS NULL',
+      'SELECT COUNT(*) AS total FROM invites WHERE used_at IS NULL AND revoked_at IS NULL',
     ).first<{ total: number }>();
-    expect(unusedInvites?.total).toBe(1);
+    const revokedInvites = await env.DB.prepare(
+      'SELECT COUNT(*) AS total FROM invites WHERE revoked_at IS NOT NULL',
+    ).first<{ total: number }>();
+    expect(unusedInvites?.total).toBe(0);
+    expect(revokedInvites?.total).toBe(1);
+
+    const replay = await apiRequest('/api/auth/register-invite', {
+      method: 'POST',
+      body: JSON.stringify({
+        inviteToken: secondToken,
+        username: 'available.username',
+        displayName: 'Available Username',
+        password: PASSWORD,
+      }),
+    });
+    expect(replay.status).toBe(400);
   });
 
   it('rotaciona a sessão no login e revoga a sessão anterior', async () => {
@@ -93,6 +108,15 @@ describe('endurecimento de autenticação e sessão', () => {
         ).json<ApiSuccess<{ authenticated: boolean }>>()
       ).data.authenticated,
     ).toBe(false);
+  });
+
+  it('descarta cookie de sessão fora do formato antes de consultar a sessão', async () => {
+    const response = await apiRequest('/api/auth/session', {
+      cookie: '__Host-k0nnect_session=not-an-opaque-token',
+    });
+    const payload = await response.json<ApiSuccess<{ authenticated: boolean }>>();
+    expect(payload.data.authenticated).toBe(false);
+    expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0');
   });
 
   it('logout all revoga todas as sessões e CSRF inválido é recusado', async () => {
