@@ -4,7 +4,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       <span className="brand-mark" aria-hidden="true">
         k0
       </span>
-      {!compact && <span className="brand-word">nnect</span>}
+      {!compact && <span className="brand-word">k0nnect</span>}
     </span>
   );
 }

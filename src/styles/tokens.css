@@ -1,0 +1,50 @@
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/space-grotesk-latin.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: Inter;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  --surface-root: #050505;
+  --surface-deep: #0d0d0d;
+  --surface-rail: #080808;
+  --surface-sidebar: #101010;
+  --surface-main: #131313;
+  --surface-elevated: #171717;
+  --surface-hover: #1d1d1d;
+  --surface-active: #222222;
+  --border-default: #292929;
+  --border-strong: #3a3a3a;
+  --border-hover: #505050;
+  --text-primary: #f5f5f5;
+  --text-secondary: #b8b8b8;
+  --text-tertiary: #777777;
+  --accent: #795aff;
+  --accent-hover: #8b70ff;
+  --accent-subtle: rgb(118 87 255 / 16%);
+  --success: #55c995;
+  --warning: #e0ae65;
+  --danger: #ef6b73;
+  --danger-subtle: rgb(239 107 115 / 12%);
+  --danger-text: #ff9ca2;
+  --success-text: #83dcb5;
+  --text-on-accent: #ffffff;
+  --font-heading: 'Space Grotesk', sans-serif;
+  --font-interface: Inter, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius-structure: 2px;
+  --radius-control: 4px;
+  --radius-overlay: 6px;
+  --transition-fast: 140ms ease;
+}
