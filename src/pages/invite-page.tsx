@@ -106,7 +106,7 @@ export function InvitePage() {
                 autoComplete="username"
                 minLength={3}
                 maxLength={24}
-                pattern="[A-Za-z0-9._-]+"
+                pattern={'[A-Za-z0-9._\\-]+'}
                 required
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
