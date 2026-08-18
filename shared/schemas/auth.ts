@@ -13,7 +13,12 @@ export const usernameSchema = z
   .transform((username) => username.toLowerCase())
   .refine((username) => !reservedUsernames.has(username));
 
-export const displayNameSchema = z.string().trim().min(1).max(40);
+export const displayNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(40)
+  .refine((displayName) => !/[\p{Cc}\u202A-\u202E\u2066-\u2069]/u.test(displayName));
 export const passwordSchema = z.string().min(12).max(128);
 export const inviteTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 export const recoveryCodeSchema = z.string().regex(/^[A-Z2-9]{4}(?:-[A-Z2-9]{4}){7}$/);

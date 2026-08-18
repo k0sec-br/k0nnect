@@ -17,6 +17,7 @@ try {
   await writeFile('.dev.vars', contents, {
     encoding: 'utf8',
     flag: constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+    mode: 0o600,
   });
   process.stdout.write('Configuração local criada em .dev.vars (arquivo ignorado pelo Git).\n');
 } catch (error) {
@@ -31,6 +32,7 @@ try {
   await writeFile('.dev.vars.production', '# Intencionalmente vazio. Use secrets remotos.\n', {
     encoding: 'utf8',
     flag: constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+    mode: 0o600,
   });
 } catch (error) {
   if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;

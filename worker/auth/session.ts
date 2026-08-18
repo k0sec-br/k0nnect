@@ -45,7 +45,8 @@ export function clearSessionCookie(context: Context): void {
 }
 
 export function readSessionToken(context: Context): string | undefined {
-  return getCookie(context, SESSION_COOKIE_NAME);
+  const token = getCookie(context, SESSION_COOKIE_NAME);
+  return token && /^[A-Za-z0-9_-]{43}$/u.test(token) ? token : undefined;
 }
 
 export async function loadSession(
@@ -53,7 +54,10 @@ export async function loadSession(
   touch = true,
 ): Promise<AuthenticatedSession | null> {
   const token = readSessionToken(context);
-  if (!token) return null;
+  if (!token) {
+    if (getCookie(context, SESSION_COOKIE_NAME)) clearSessionCookie(context);
+    return null;
+  }
   const tokenHash = await sha256(token);
   const now = new Date();
   const idleCutoff = new Date(now.getTime() - SESSION_IDLE_SECONDS * 1_000).toISOString();

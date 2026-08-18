@@ -70,7 +70,8 @@ export async function registerWithInvite(
          )
          SELECT ?, ?, ?, ?, ?, ?, ?, role, 'active', ?, ?, ?
          FROM invites
-         WHERE id = ? AND token_hash = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?`,
+         WHERE id = ? AND token_hash = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?
+           AND NOT EXISTS (SELECT 1 FROM users WHERE username = ? COLLATE NOCASE)`,
       ).bind(
         userId,
         input.username,
@@ -85,12 +86,16 @@ export async function registerWithInvite(
         invite.id,
         inviteHash,
         now,
+        input.username,
       ),
       env.DB.prepare(
-        `UPDATE invites SET used_at = ?, used_by = ?
-         WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?
-           AND EXISTS (SELECT 1 FROM users WHERE id = ?)`,
-      ).bind(now, userId, invite.id, now, userId),
+        `UPDATE invites
+         SET used_at = CASE WHEN EXISTS (SELECT 1 FROM users WHERE id = ?) THEN ? ELSE used_at END,
+             used_by = CASE WHEN EXISTS (SELECT 1 FROM users WHERE id = ?) THEN ? ELSE used_by END,
+             revoked_at = CASE WHEN EXISTS (SELECT 1 FROM users WHERE id = ?) THEN revoked_at ELSE ? END
+         WHERE id = ? AND token_hash = ? AND used_at IS NULL AND revoked_at IS NULL
+           AND expires_at > ?`,
+      ).bind(userId, now, userId, userId, userId, now, invite.id, inviteHash, now),
       ...recoveryRows.map((row) =>
         env.DB.prepare(
           `INSERT INTO recovery_codes (id, user_id, code_hash, created_at)

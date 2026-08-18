@@ -25,11 +25,43 @@ export async function parseJson<TSchema extends z.ZodType>(
   context: Context<AppBindings>,
   schema: TSchema,
 ): Promise<z.output<TSchema>> {
-  const contentLength = Number(context.req.header('Content-Length') ?? '0');
-  if (contentLength > MAX_JSON_BODY_BYTES) throw new AppError('VALIDATION_ERROR', 413);
+  const contentType = context.req.header('Content-Type')?.split(';', 1)[0]?.trim().toLowerCase();
+  if (contentType !== 'application/json') throw new AppError('VALIDATION_ERROR', 415);
+
+  const contentLengthHeader = context.req.header('Content-Length');
+  if (contentLengthHeader !== undefined) {
+    const contentLength = Number(contentLengthHeader);
+    if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
+      throw new AppError('VALIDATION_ERROR', 400);
+    }
+    if (contentLength > MAX_JSON_BODY_BYTES) throw new AppError('VALIDATION_ERROR', 413);
+  }
+
+  const reader = context.req.raw.body?.getReader();
+  if (!reader) throw new AppError('VALIDATION_ERROR', 400);
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    totalBytes += chunk.value.byteLength;
+    if (totalBytes > MAX_JSON_BODY_BYTES) {
+      await reader.cancel();
+      throw new AppError('VALIDATION_ERROR', 413);
+    }
+    chunks.push(chunk.value);
+  }
+
+  const encodedBody = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    encodedBody.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
   let body: unknown;
   try {
-    body = await context.req.json();
+    body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(encodedBody));
   } catch {
     throw new AppError('VALIDATION_ERROR', 400);
   }

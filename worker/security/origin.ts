@@ -13,8 +13,8 @@ export function validateRequestOrigin(request: Request, env: Env): void {
   const origin = request.headers.get('Origin');
   if (origin === null || !allowedOrigins(env).has(origin)) throw new AppError('FORBIDDEN', 403);
 
-  const expectedHost = new URL(origin).host;
-  const forwardedHost = request.headers.get('X-Forwarded-Host');
-  const host = forwardedHost ?? request.headers.get('Host') ?? new URL(request.url).host;
-  if (host !== expectedHost) throw new AppError('FORBIDDEN', 403);
+  const requestOrigin = new URL(request.url).origin;
+  if (!allowedOrigins(env).has(requestOrigin) || requestOrigin !== origin) {
+    throw new AppError('FORBIDDEN', 403);
+  }
 }
