@@ -7,9 +7,18 @@ import {
 import {
   clientRoomMessageSchema,
   ROOM_PROTOCOL_VERSION,
+  type MediaPublication,
+  type MediaSource,
   type RoomParticipant,
   type ServerRoomMessage,
 } from '../../shared/protocol/room';
+
+interface PublicationRecord extends MediaPublication {
+  realtimeSessionId: string;
+  realtimeTrackName: string;
+  mid: string;
+  pending: boolean;
+}
 
 interface ConnectionAttachment {
   connectionId: string;
@@ -23,8 +32,23 @@ interface ConnectionAttachment {
   messagesInWindow: number;
   lastSpeakingUpdateAt: number;
   realtimeSessionId: string | null;
-  audioTrackName: string | null;
+  publications: PublicationRecord[];
+  subscriptions: { publicationId: string; mid: string }[];
 }
+
+export interface ResolvedPublication {
+  publication: MediaPublication;
+  realtimeSessionId: string;
+  realtimeTrackName: string;
+  mid: string;
+}
+
+const SOURCE_KINDS: Record<MediaSource, 'audio' | 'video'> = {
+  microphone: 'audio',
+  camera: 'video',
+  'screen-video': 'video',
+  'screen-audio': 'audio',
+};
 
 function toParticipant(attachment: ConnectionAttachment): RoomParticipant {
   return {
@@ -33,8 +57,16 @@ function toParticipant(attachment: ConnectionAttachment): RoomParticipant {
     muted: attachment.muted,
     deafened: attachment.deafened,
     speaking: attachment.speaking,
-    realtimeSessionId: attachment.realtimeSessionId,
-    audioTrackName: attachment.audioTrackName,
+  };
+}
+
+function toPublicPublication(record: PublicationRecord): MediaPublication {
+  return {
+    publicationId: record.publicationId,
+    userId: record.userId,
+    kind: record.kind,
+    source: record.source,
+    createdAt: record.createdAt,
   };
 }
 
@@ -56,6 +88,8 @@ export class VoiceRoom extends DurableObject<Env> {
 
     const displayName = decodeURIComponent(encodedDisplayName);
     for (const existingSocket of this.ctx.getWebSockets(`user:${userId}`)) {
+      const existing = existingSocket.deserializeAttachment() as ConnectionAttachment | null;
+      if (existing) this.broadcastUnpublished(existing);
       existingSocket.close(4001, 'Conexão substituída');
     }
 
@@ -74,16 +108,20 @@ export class VoiceRoom extends DurableObject<Env> {
       messagesInWindow: 0,
       lastSpeakingUpdateAt: 0,
       realtimeSessionId: null,
-      audioTrackName: null,
+      publications: [],
+      subscriptions: [],
     };
     server.serializeAttachment(attachment);
     this.ctx.acceptWebSocket(server, [`user:${userId}`, `connection:${attachment.connectionId}`]);
 
-    const participants = this.participants();
     this.send(server, {
       v: ROOM_PROTOCOL_VERSION,
       type: 'room.ready',
-      payload: { connectionId: attachment.connectionId, participants },
+      payload: {
+        connectionId: attachment.connectionId,
+        participants: this.participants(),
+        publications: this.publications(),
+      },
     });
     this.broadcast(
       { v: ROOM_PROTOCOL_VERSION, type: 'member.joined', payload: toParticipant(attachment) },
@@ -164,6 +202,7 @@ export class VoiceRoom extends DurableObject<Env> {
       .getWebSockets(`user:${attachment.userId}`)
       .some((candidate) => candidate !== socket && candidate.readyState === WebSocket.OPEN);
     if (replacementIsOpen) return;
+    this.broadcastUnpublished(attachment);
     this.broadcast({
       v: ROOM_PROTOCOL_VERSION,
       type: 'member.left',
@@ -192,54 +231,173 @@ export class VoiceRoom extends DurableObject<Env> {
     return connection?.attachment.realtimeSessionId === sessionId;
   }
 
-  publishAudioTrack(
+  reservePublication(
     userId: string,
     connectionId: string,
     sessionId: string,
-    trackName: string,
-  ): boolean {
+    source: MediaSource,
+    mid: string,
+  ): string | null {
     const connection = this.findConnection(userId, connectionId);
-    if (connection?.attachment.realtimeSessionId !== sessionId) return false;
-    connection.attachment.audioTrackName = trackName;
+    if (connection?.attachment.realtimeSessionId !== sessionId) return null;
+    if (connection.attachment.publications.some((item) => item.source === source)) return null;
+    if (
+      source === 'screen-audio' &&
+      !connection.attachment.publications.some(
+        (item) => item.source === 'screen-video' && !item.pending,
+      )
+    ) {
+      return null;
+    }
+
+    const publicationId = crypto.randomUUID();
+    connection.attachment.publications.push({
+      publicationId,
+      userId,
+      source,
+      kind: SOURCE_KINDS[source],
+      createdAt: Date.now(),
+      realtimeSessionId: sessionId,
+      realtimeTrackName: '',
+      mid,
+      pending: true,
+    });
+    connection.socket.serializeAttachment(connection.attachment);
+    return publicationId;
+  }
+
+  completePublication(
+    userId: string,
+    connectionId: string,
+    publicationId: string,
+    realtimeTrackName: string,
+  ): MediaPublication | null {
+    const connection = this.findConnection(userId, connectionId);
+    const record = connection?.attachment.publications.find(
+      (item) => item.publicationId === publicationId && item.pending,
+    );
+    if (!connection || !record) return null;
+    record.realtimeTrackName = realtimeTrackName;
+    record.pending = false;
+    connection.socket.serializeAttachment(connection.attachment);
+    const publication = toPublicPublication(record);
+    this.broadcast({ v: ROOM_PROTOCOL_VERSION, type: 'media.published', payload: publication });
+    return publication;
+  }
+
+  cancelPublication(userId: string, connectionId: string, publicationId: string): void {
+    const connection = this.findConnection(userId, connectionId);
+    if (!connection) return;
+    connection.attachment.publications = connection.attachment.publications.filter(
+      (item) => item.publicationId !== publicationId || !item.pending,
+    );
+    connection.socket.serializeAttachment(connection.attachment);
+  }
+
+  resolvePublication(
+    userId: string,
+    connectionId: string,
+    publicationId: string,
+  ): ResolvedPublication | null {
+    if (!this.findConnection(userId, connectionId)) return null;
+    for (const socket of this.ctx.getWebSockets()) {
+      if (socket.readyState !== WebSocket.OPEN) continue;
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      const record = attachment?.publications.find(
+        (item) => item.publicationId === publicationId && !item.pending,
+      );
+      if (attachment?.userId !== userId && record) return this.resolveRecord(record);
+    }
+    return null;
+  }
+
+  resolveOwnedPublication(
+    userId: string,
+    connectionId: string,
+    sessionId: string,
+    publicationId: string,
+  ): ResolvedPublication | null {
+    const connection = this.findConnection(userId, connectionId);
+    if (connection?.attachment.realtimeSessionId !== sessionId) return null;
+    const record = connection.attachment.publications.find(
+      (item) => item.publicationId === publicationId && !item.pending,
+    );
+    return record ? this.resolveRecord(record) : null;
+  }
+
+  removePublication(userId: string, connectionId: string, publicationId: string): boolean {
+    const connection = this.findConnection(userId, connectionId);
+    if (!connection) return false;
+    const record = connection.attachment.publications.find(
+      (item) => item.publicationId === publicationId && !item.pending,
+    );
+    if (!record) return false;
+    connection.attachment.publications = connection.attachment.publications.filter(
+      (item) => item.publicationId !== publicationId,
+    );
     connection.socket.serializeAttachment(connection.attachment);
     this.broadcast({
       v: ROOM_PROTOCOL_VERSION,
-      type: 'voice.track-published',
-      payload: { userId, realtimeSessionId: sessionId, trackName },
+      type: 'media.unpublished',
+      payload: { publicationId, userId },
     });
     return true;
   }
 
-  canSubscribe(
-    userId: string,
-    connectionId: string,
-    remoteSessionId: string,
-    remoteTrackName: string,
-  ): boolean {
-    if (!this.findConnection(userId, connectionId)) return false;
-    return this.ctx.getWebSockets().some((socket) => {
-      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
-      return (
-        attachment?.userId !== userId &&
-        attachment?.realtimeSessionId === remoteSessionId &&
-        attachment?.audioTrackName === remoteTrackName
-      );
-    });
-  }
-
-  ownsTrack(userId: string, connectionId: string, sessionId: string, trackName: string): boolean {
+  hasOwnedPublicationSource(userId: string, connectionId: string, source: MediaSource): boolean {
     const connection = this.findConnection(userId, connectionId);
-    return (
-      connection?.attachment.realtimeSessionId === sessionId &&
-      connection.attachment.audioTrackName === trackName
+    return Boolean(
+      connection?.attachment.publications.some(
+        (publication) => publication.source === source && !publication.pending,
+      ),
     );
   }
 
-  clearTrack(userId: string, connectionId: string, trackName: string): void {
+  registerSubscription(
+    userId: string,
+    connectionId: string,
+    sessionId: string,
+    publicationId: string,
+    mid: string,
+  ): boolean {
     const connection = this.findConnection(userId, connectionId);
-    if (connection?.attachment.audioTrackName !== trackName) return;
-    connection.attachment.audioTrackName = null;
+    if (connection?.attachment.realtimeSessionId !== sessionId) return false;
+    connection.attachment.subscriptions = [
+      ...connection.attachment.subscriptions.filter(
+        (subscription) => subscription.publicationId !== publicationId,
+      ),
+      { publicationId, mid },
+    ];
     connection.socket.serializeAttachment(connection.attachment);
+    return true;
+  }
+
+  takeSubscription(
+    userId: string,
+    connectionId: string,
+    sessionId: string,
+    publicationId: string,
+  ): string | null {
+    const connection = this.findConnection(userId, connectionId);
+    if (connection?.attachment.realtimeSessionId !== sessionId) return null;
+    const subscription = connection.attachment.subscriptions.find(
+      (item) => item.publicationId === publicationId,
+    );
+    if (!subscription) return null;
+    connection.attachment.subscriptions = connection.attachment.subscriptions.filter(
+      (item) => item.publicationId !== publicationId,
+    );
+    connection.socket.serializeAttachment(connection.attachment);
+    return subscription.mid;
+  }
+
+  private resolveRecord(record: PublicationRecord): ResolvedPublication {
+    return {
+      publication: toPublicPublication(record),
+      realtimeSessionId: record.realtimeSessionId,
+      realtimeTrackName: record.realtimeTrackName,
+      mid: record.mid,
+    };
   }
 
   private participants(): RoomParticipant[] {
@@ -247,6 +405,18 @@ export class VoiceRoom extends DurableObject<Env> {
       if (socket.readyState !== WebSocket.OPEN) return [];
       const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
       return attachment ? [toParticipant(attachment)] : [];
+    });
+  }
+
+  private publications(): MediaPublication[] {
+    return this.ctx.getWebSockets().flatMap((socket) => {
+      if (socket.readyState !== WebSocket.OPEN) return [];
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      return (
+        attachment?.publications
+          .filter((publication) => !publication.pending)
+          .map(toPublicPublication) ?? []
+      );
     });
   }
 
@@ -259,6 +429,17 @@ export class VoiceRoom extends DurableObject<Env> {
       if (attachment?.userId === userId) return { socket, attachment };
     }
     return undefined;
+  }
+
+  private broadcastUnpublished(attachment: ConnectionAttachment): void {
+    for (const publication of attachment.publications) {
+      if (publication.pending) continue;
+      this.broadcast({
+        v: ROOM_PROTOCOL_VERSION,
+        type: 'media.unpublished',
+        payload: { publicationId: publication.publicationId, userId: attachment.userId },
+      });
+    }
   }
 
   private recordInvalidMessage(socket: WebSocket, attachment: ConnectionAttachment): void {

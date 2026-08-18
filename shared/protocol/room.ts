@@ -1,6 +1,20 @@
 import { z } from 'zod';
 
-export const ROOM_PROTOCOL_VERSION = 1 as const;
+export const ROOM_PROTOCOL_VERSION = 2 as const;
+
+export const MEDIA_SOURCES = ['microphone', 'camera', 'screen-video', 'screen-audio'] as const;
+export const mediaSourceSchema = z.enum(MEDIA_SOURCES);
+export type MediaSource = z.infer<typeof mediaSourceSchema>;
+
+export const mediaPublicationSchema = z.object({
+  publicationId: z.string().uuid(),
+  userId: z.string().uuid(),
+  kind: z.enum(['audio', 'video']),
+  source: mediaSourceSchema,
+  createdAt: z.number().int().nonnegative(),
+});
+
+export type MediaPublication = z.infer<typeof mediaPublicationSchema>;
 
 export const roomParticipantSchema = z.object({
   userId: z.string().uuid(),
@@ -8,8 +22,6 @@ export const roomParticipantSchema = z.object({
   muted: z.boolean(),
   deafened: z.boolean(),
   speaking: z.boolean(),
-  realtimeSessionId: z.string().max(128).nullable(),
-  audioTrackName: z.string().max(128).nullable(),
 });
 
 export type RoomParticipant = z.infer<typeof roomParticipantSchema>;
@@ -43,6 +55,7 @@ export const serverRoomMessageSchema = z.discriminatedUnion('type', [
     payload: z.object({
       connectionId: z.string().uuid(),
       participants: z.array(roomParticipantSchema),
+      publications: z.array(mediaPublicationSchema),
     }),
   }),
   z.object({
@@ -62,12 +75,13 @@ export const serverRoomMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...serverEnvelope,
-    type: z.literal('voice.track-published'),
-    payload: z.object({
-      userId: z.string().uuid(),
-      realtimeSessionId: z.string().min(1).max(128),
-      trackName: z.string().min(1).max(128),
-    }),
+    type: z.literal('media.published'),
+    payload: mediaPublicationSchema,
+  }),
+  z.object({
+    ...serverEnvelope,
+    type: z.literal('media.unpublished'),
+    payload: z.object({ publicationId: z.string().uuid(), userId: z.string().uuid() }),
   }),
   z.object({
     ...serverEnvelope,

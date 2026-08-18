@@ -5,6 +5,8 @@ import { AppShell } from '../components/app-shell';
 import { AudioOnlyView } from '../components/audio-only-view';
 import { FormMessage } from '../components/form-message';
 import { IconButton } from '../components/icon-button';
+import { MediaRoomView } from '../components/media-room-view';
+import { MediaDebugPanel } from '../components/media-debug-panel';
 import { MenuIcon, MicIcon, UsersIcon, VolumeIcon } from '../components/icons';
 import { RemoteAudio } from '../components/remote-audio';
 import { useAuth } from '../features/auth/auth-context';
@@ -33,7 +35,7 @@ export function AppPage() {
   const voice = useVoiceSession({
     roomId: room?.id ?? 'room_general',
     connectionId: socket.connectionId,
-    participants: socket.participants.filter((participant) => participant.userId !== user?.id),
+    publications: socket.publications.filter((publication) => publication.userId !== user?.id),
     updatePresence: socket.updatePresence,
     updateSpeaking: socket.updateSpeaking,
   });
@@ -56,13 +58,21 @@ export function AppPage() {
     muted: voice.muted,
     deafened: voice.deafened,
     canJoin: Boolean(socket.connectionId && config?.realtimeEnabled),
-    selectedDevice: voice.selectedDevice,
-    devices: voice.devices,
+    selectedMicrophone: voice.selectedMicrophone,
+    microphones: voice.microphones,
+    cameraState: voice.cameraState,
+    screenState: voice.screenState,
+    supportsCamera: voice.supportsCamera,
+    supportsScreenShare: voice.supportsScreenShare,
     join: () => void voice.join(),
     leave: () => void voice.leave(),
     toggleMuted: voice.toggleMuted,
     toggleDeafened: voice.toggleDeafened,
     changeMicrophone: (deviceId: string) => void voice.changeMicrophone(deviceId),
+    toggleCamera: () =>
+      void (voice.cameraState === 'active' ? voice.stopCamera() : voice.startCamera()),
+    toggleScreenShare: () =>
+      void (voice.screenState === 'active' ? voice.stopScreenShare() : voice.startScreenShare()),
   };
 
   return (
@@ -70,6 +80,7 @@ export function AppPage() {
       user={user}
       roomName={room.name}
       participants={socket.participants}
+      publications={socket.publications}
       connectionState={socket.connectionState}
       voice={shellVoice}
       channelsOpen={channelsOpen}
@@ -120,7 +131,19 @@ export function AppPage() {
               ambiente.
             </div>
           )}
-          <AudioOnlyView participants={socket.participants} userId={user.id} />
+          {[...voice.localMedia, ...voice.remoteMedia].some(
+            (media) => media.publication.kind === 'video',
+          ) ? (
+            <MediaRoomView
+              participants={socket.participants}
+              userId={user.id}
+              localMedia={voice.localMedia}
+              remoteMedia={voice.remoteMedia}
+            />
+          ) : (
+            <AudioOnlyView participants={socket.participants} userId={user.id} />
+          )}
+          {import.meta.env.DEV && voice.debugStats && <MediaDebugPanel stats={voice.debugStats} />}
         </div>
 
         {voice.status === 'idle' && (
@@ -137,9 +160,15 @@ export function AppPage() {
           </div>
         )}
         <div hidden aria-hidden="true">
-          {voice.remoteStreams.map((remote) => (
-            <RemoteAudio key={remote.id} stream={remote.stream} muted={voice.deafened} />
-          ))}
+          {voice.remoteMedia
+            .filter((remote) => remote.publication.kind === 'audio')
+            .map((remote) => (
+              <RemoteAudio
+                key={remote.publication.publicationId}
+                stream={remote.stream}
+                muted={voice.deafened}
+              />
+            ))}
         </div>
       </div>
     </AppShell>

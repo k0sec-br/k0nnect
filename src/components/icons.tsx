@@ -135,3 +135,45 @@ export function DownloadIcon(props: SVGProps<SVGSVGElement>) {
     </Icon>
   );
 }
+
+export function CameraIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M15 10l4.6-2.6a1 1 0 0 1 1.4.9v7.4a1 1 0 0 1-1.4.9L15 14" />
+      <rect x="3" y="6" width="12" height="12" rx="2" />
+    </Icon>
+  );
+}
+
+export function CameraOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m3 3 18 18M15 10l4.6-2.6a1 1 0 0 1 1.4.9v7.4M11 6h2a2 2 0 0 1 2 2v5M13 18H5a2 2 0 0 1-2-2V8c0-.6.3-1.2.7-1.5" />
+    </Icon>
+  );
+}
+
+export function ScreenShareIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4M9 10l3-3 3 3M12 7v7" />
+    </Icon>
+  );
+}
+
+export function ScreenShareOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m3 3 18 18M10 4h9a2 2 0 0 1 2 2v9c0 .6-.2 1-.6 1.4M14 17H5a2 2 0 0 1-2-2V6c0-.5.2-1 .5-1.3M8 21h8M12 17v4" />
+    </Icon>
+  );
+}
+
+export function MaximizeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+    </Icon>
+  );
+}

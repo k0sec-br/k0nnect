@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
+import type { MediaSource } from '../../shared/protocol/room';
 import { AppError } from '../errors/app-error';
-import { findAudioTransceiverMid } from './sdp';
 
 const REALTIME_API_ORIGIN = 'https://rtc.live.cloudflare.com/v1';
 const MAX_REALTIME_RESPONSE_BYTES = 1_048_576;
@@ -16,20 +16,22 @@ const newSessionResponseSchema = z.object({
   sessionDescription: sessionDescriptionSchema.optional(),
 });
 
+const trackResultSchema = z.object({
+  trackName: z.string().min(1).max(128),
+  mid: z.string().max(32).optional(),
+  sessionId: z.string().max(128).optional(),
+});
+
 const tracksResponseSchema = z.object({
-  sessionDescription: sessionDescriptionSchema,
-  tracks: z
-    .array(
-      z.object({
-        trackName: z.string().min(1).max(128),
-        mid: z.string().max(32).optional(),
-      }),
-    )
-    .default([]),
+  requiresImmediateRenegotiation: z.boolean().optional(),
+  sessionDescription: sessionDescriptionSchema.optional(),
+  tracks: z.array(trackResultSchema).default([]),
 });
 
 const closeTracksResponseSchema = z.object({
   requiresImmediateRenegotiation: z.boolean().optional(),
+  sessionDescription: sessionDescriptionSchema.optional(),
+  tracks: z.array(z.object({ mid: z.string().max(32) })).default([]),
 });
 
 const iceServerSchema = z.object({
@@ -75,31 +77,50 @@ export class CloudflareRealtimeClient {
     return newSessionResponseSchema.parse(await this.request('/sessions/new', 'POST'));
   }
 
-  async publishAudio(
+  async publishTrack(
     sessionId: string,
     sessionDescription: { type: 'offer'; sdp: string },
-    mid: string | undefined,
+    mid: string,
     trackName: string,
   ) {
-    const audioMid = mid ?? findAudioTransceiverMid(sessionDescription.sdp);
-    if (!audioMid) throw new AppError('MEDIA_UNAVAILABLE', 400);
     const response = await this.request(
       `/sessions/${encodeURIComponent(sessionId)}/tracks/new`,
       'POST',
       {
         sessionDescription,
-        tracks: [{ location: 'local', mid: audioMid, trackName }],
+        tracks: [{ location: 'local', mid, trackName }],
       },
     );
     return tracksResponseSchema.parse(response);
   }
 
-  async subscribeAudio(sessionId: string, remoteSessionId: string, remoteTrackName: string) {
+  async subscribeTrack(
+    sessionId: string,
+    remoteSessionId: string,
+    remoteTrackName: string,
+    source: MediaSource,
+    preferredRid?: string,
+  ) {
+    const simulcast =
+      source === 'camera'
+        ? {
+            preferredRid: preferredRid ?? 'b-medium',
+            priorityOrdering: 'asciibetical',
+            ridNotAvailable: 'asciibetical',
+          }
+        : undefined;
     const response = await this.request(
       `/sessions/${encodeURIComponent(sessionId)}/tracks/new`,
       'POST',
       {
-        tracks: [{ location: 'remote', sessionId: remoteSessionId, trackName: remoteTrackName }],
+        tracks: [
+          {
+            location: 'remote',
+            sessionId: remoteSessionId,
+            trackName: remoteTrackName,
+            ...(simulcast ? { simulcast } : {}),
+          },
+        ],
       },
     );
     return tracksResponseSchema.parse(response);
@@ -111,13 +132,11 @@ export class CloudflareRealtimeClient {
     });
   }
 
-  async closeTrack(sessionId: string, trackName: string) {
+  async closeTrack(sessionId: string, mid: string) {
     const response = await this.request(
       `/sessions/${encodeURIComponent(sessionId)}/tracks/close`,
       'PUT',
-      {
-        tracks: [{ location: 'local', trackName }],
-      },
+      { tracks: [{ mid }] },
     );
     return closeTracksResponseSchema.parse(response);
   }

@@ -5,6 +5,7 @@ import { navigate, usePathname } from '../lib/navigation';
 import { AppPage } from '../pages/app-page';
 import { InvitePage } from '../pages/invite-page';
 import { LoginPage } from '../pages/login-page';
+import { MediaSettingsPage } from '../pages/media-settings-page';
 import { PrivacyPage } from '../pages/privacy-page';
 import { PublicSecurityPage } from '../pages/public-security-page';
 import { RecoverPage } from '../pages/recover-page';
@@ -43,6 +44,12 @@ export function App() {
     return (
       <ProtectedRoute>
         <SecuritySettingsPage />
+      </ProtectedRoute>
+    );
+  if (pathname === '/settings/media')
+    return (
+      <ProtectedRoute>
+        <MediaSettingsPage />
       </ProtectedRoute>
     );
   if (pathname === '/settings')

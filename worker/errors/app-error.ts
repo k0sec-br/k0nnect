@@ -5,7 +5,7 @@ const USER_MESSAGES = {
   CSRF_INVALID: 'Sua sessão precisa ser atualizada. Recarregue a página e tente novamente.',
   FORBIDDEN: 'Você não tem permissão para realizar esta ação.',
   INVITE_UNAVAILABLE: 'Este convite não é válido ou não está mais disponível.',
-  MEDIA_UNAVAILABLE: 'Não foi possível estabelecer a conexão de voz agora.',
+  MEDIA_UNAVAILABLE: 'Não foi possível estabelecer a conexão de mídia agora.',
   RATE_LIMITED: 'Muitas tentativas em pouco tempo. Aguarde um pouco e tente novamente.',
   RECOVERY_INVALID: 'Não foi possível validar essas informações.',
   REALTIME_DISABLED: 'A comunicação de voz está temporariamente indisponível.',

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { mediaSourceSchema } from '../protocol/room';
+
 const roomIdSchema = z
   .string()
   .min(1)
@@ -11,8 +13,17 @@ const realtimeIdentifierSchema = z
   .min(1)
   .max(128)
   .regex(/^[a-zA-Z0-9_-]+$/);
+const publicationIdSchema = z.string().uuid();
 const transceiverMidSchema = z.string().min(1).max(32);
 const sdpSchema = z.string().min(1).max(524_288);
+const offerSchema = z.object({ type: z.literal('offer'), sdp: sdpSchema }).strict();
+const answerSchema = z.object({ type: z.literal('answer'), sdp: sdpSchema }).strict();
+
+const sessionOwnerFields = {
+  roomId: roomIdSchema,
+  connectionId: connectionIdSchema,
+  sessionId: realtimeIdentifierSchema,
+};
 
 export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
   z
@@ -21,39 +32,39 @@ export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
   z
     .object({
       action: z.literal('publish'),
-      roomId: roomIdSchema,
-      connectionId: connectionIdSchema,
-      sessionId: realtimeIdentifierSchema,
-      mid: transceiverMidSchema.optional(),
-      sessionDescription: z.object({ type: z.literal('offer'), sdp: sdpSchema }).strict(),
+      ...sessionOwnerFields,
+      source: mediaSourceSchema,
+      mid: transceiverMidSchema,
+      sessionDescription: offerSchema,
     })
     .strict(),
   z
     .object({
       action: z.literal('subscribe'),
-      roomId: roomIdSchema,
-      connectionId: connectionIdSchema,
-      sessionId: realtimeIdentifierSchema,
-      remoteSessionId: realtimeIdentifierSchema,
-      remoteTrackName: realtimeIdentifierSchema,
+      ...sessionOwnerFields,
+      publicationId: publicationIdSchema,
+      preferredRid: z.string().min(1).max(16).optional(),
     })
     .strict(),
   z
     .object({
       action: z.literal('renegotiate'),
-      roomId: roomIdSchema,
-      connectionId: connectionIdSchema,
-      sessionId: realtimeIdentifierSchema,
-      sessionDescription: z.object({ type: z.literal('answer'), sdp: sdpSchema }).strict(),
+      ...sessionOwnerFields,
+      sessionDescription: answerSchema,
     })
     .strict(),
   z
     .object({
       action: z.literal('close'),
-      roomId: roomIdSchema,
-      connectionId: connectionIdSchema,
-      sessionId: realtimeIdentifierSchema,
-      trackName: realtimeIdentifierSchema,
+      ...sessionOwnerFields,
+      publicationId: publicationIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('unsubscribe'),
+      ...sessionOwnerFields,
+      publicationId: publicationIdSchema,
     })
     .strict(),
   z

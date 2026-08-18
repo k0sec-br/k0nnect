@@ -1,18 +1,22 @@
 import type { ReactNode } from 'react';
 
-import type { RoomParticipant } from '../../shared/protocol/room';
+import type { MediaPublication, RoomParticipant } from '../../shared/protocol/room';
 import type { SessionUser } from '../../shared/types/api';
 import { handleInternalLink } from '../lib/navigation';
 import { Avatar, participantState } from './avatar';
 import { Brand } from './brand';
 import { IconButton } from './icon-button';
 import {
+  CameraIcon,
+  CameraOffIcon,
   CloseIcon,
   ExitIcon,
   HeadphonesIcon,
   MicIcon,
   MicOffIcon,
   PlusIcon,
+  ScreenShareIcon,
+  ScreenShareOffIcon,
   SettingsIcon,
   UsersIcon,
   VolumeIcon,
@@ -23,13 +27,19 @@ interface VoiceControls {
   muted: boolean;
   deafened: boolean;
   canJoin: boolean;
-  selectedDevice: string;
-  devices: MediaDeviceInfo[];
+  selectedMicrophone: string;
+  microphones: MediaDeviceInfo[];
+  cameraState: string;
+  screenState: string;
+  supportsCamera: boolean;
+  supportsScreenShare: boolean;
   join(): void;
   leave(): void;
   toggleMuted(): void;
   toggleDeafened(): void;
   changeMicrophone(deviceId: string): void;
+  toggleCamera(): void;
+  toggleScreenShare(): void;
 }
 
 interface AppShellProps {
@@ -37,6 +47,7 @@ interface AppShellProps {
   user: SessionUser;
   roomName: string;
   participants: RoomParticipant[];
+  publications: MediaPublication[];
   connectionState: string;
   voice: VoiceControls;
   channelsOpen: boolean;
@@ -49,10 +60,19 @@ interface AppShellProps {
 function ParticipantLine({
   participant,
   userId,
+  publications,
 }: {
   participant: RoomParticipant;
   userId: string;
+  publications: MediaPublication[];
 }) {
+  const isSharingScreen = publications.some(
+    (publication) =>
+      publication.userId === participant.userId && publication.source === 'screen-video',
+  );
+  const cameraActive = publications.some(
+    (publication) => publication.userId === participant.userId && publication.source === 'camera',
+  );
   return (
     <div className={`channel-member ${participant.speaking ? 'is-speaking' : ''}`}>
       <Avatar
@@ -64,7 +84,11 @@ function ParticipantLine({
         {participant.displayName}
         {participant.userId === userId ? ' (você)' : ''}
       </span>
-      {participant.deafened ? (
+      {isSharingScreen ? (
+        <ScreenShareIcon aria-label="Compartilhando tela" />
+      ) : cameraActive ? (
+        <CameraIcon aria-label="Câmera ligada" />
+      ) : participant.deafened ? (
         <HeadphonesIcon aria-label="Áudio desativado" />
       ) : participant.muted ? (
         <MicOffIcon aria-label="Microfone desativado" />
@@ -82,15 +106,15 @@ function VoiceConnectionPanel({ roomName, voice }: { roomName: string; voice: Vo
         <strong>{roomName}</strong>
       </div>
       <div className="voice-connection-actions">
-        {voice.devices.length > 0 && (
+        {voice.microphones.length > 0 && (
           <label className="compact-device-select">
             <span>Microfone</span>
             <select
-              value={voice.selectedDevice}
+              value={voice.selectedMicrophone}
               onChange={(event) => voice.changeMicrophone(event.target.value)}
               aria-label="Microfone"
             >
-              {voice.devices.map((device, index) => (
+              {voice.microphones.map((device, index) => (
                 <option key={device.deviceId} value={device.deviceId}>
                   {device.label || `Microfone ${index + 1}`}
                 </option>
@@ -143,6 +167,40 @@ function UserPanel({
         >
           <HeadphonesIcon aria-hidden="true" />
         </IconButton>
+        <IconButton
+          label={voice.cameraState === 'active' ? 'Desativar câmera' : 'Ativar câmera'}
+          className={voice.cameraState === 'active' ? 'is-active' : ''}
+          aria-pressed={voice.cameraState === 'active'}
+          onClick={voice.toggleCamera}
+          disabled={
+            voice.status !== 'connected' ||
+            !voice.supportsCamera ||
+            !['idle', 'active', 'error'].includes(voice.cameraState)
+          }
+        >
+          {voice.cameraState === 'active' ? (
+            <CameraOffIcon aria-hidden="true" />
+          ) : (
+            <CameraIcon aria-hidden="true" />
+          )}
+        </IconButton>
+        <IconButton
+          label={voice.screenState === 'active' ? 'Parar compartilhamento' : 'Compartilhar tela'}
+          className={voice.screenState === 'active' ? 'is-active' : ''}
+          aria-pressed={voice.screenState === 'active'}
+          onClick={voice.toggleScreenShare}
+          disabled={
+            voice.status !== 'connected' ||
+            !voice.supportsScreenShare ||
+            !['idle', 'active', 'error'].includes(voice.screenState)
+          }
+        >
+          {voice.screenState === 'active' ? (
+            <ScreenShareOffIcon aria-hidden="true" />
+          ) : (
+            <ScreenShareIcon aria-hidden="true" />
+          )}
+        </IconButton>
         <a
           className="icon-link"
           href="/settings"
@@ -163,12 +221,16 @@ function UserPanel({
 function ChannelSidebar({
   roomName,
   participants,
+  publications,
   user,
   voice,
   open,
   onClose,
   onLogout,
-}: Pick<AppShellProps, 'roomName' | 'participants' | 'user' | 'voice' | 'onLogout'> & {
+}: Pick<
+  AppShellProps,
+  'roomName' | 'participants' | 'publications' | 'user' | 'voice' | 'onLogout'
+> & {
   open: boolean;
   onClose(): void;
 }) {
@@ -195,7 +257,12 @@ function ChannelSidebar({
         </a>
         <div className="channel-members">
           {participants.map((participant) => (
-            <ParticipantLine key={participant.userId} participant={participant} userId={user.id} />
+            <ParticipantLine
+              key={participant.userId}
+              participant={participant}
+              userId={user.id}
+              publications={publications}
+            />
           ))}
         </div>
       </nav>
@@ -208,11 +275,13 @@ function ChannelSidebar({
 
 function MemberSidebar({
   participants,
+  publications,
   userId,
   open,
   onClose,
 }: {
   participants: RoomParticipant[];
+  publications: MediaPublication[];
   userId: string;
   open: boolean;
   onClose(): void;
@@ -228,6 +297,14 @@ function MemberSidebar({
       <div className="member-list">
         {participants.map((participant) => {
           const state = participantState(participant);
+          const isSharingScreen = publications.some(
+            (publication) =>
+              publication.userId === participant.userId && publication.source === 'screen-video',
+          );
+          const cameraActive = publications.some(
+            (publication) =>
+              publication.userId === participant.userId && publication.source === 'camera',
+          );
           return (
             <div
               className={`member-item ${participant.speaking ? 'is-speaking' : ''}`}
@@ -240,13 +317,17 @@ function MemberSidebar({
                   {participant.userId === userId ? ' (você)' : ''}
                 </strong>
                 <small>
-                  {state === 'speaking'
-                    ? 'Falando'
-                    : state === 'muted'
-                      ? 'Microfone desativado'
-                      : state === 'deafened'
-                        ? 'Áudio desativado'
-                        : 'Conectado'}
+                  {isSharingScreen
+                    ? 'Compartilhando tela'
+                    : cameraActive
+                      ? 'Câmera ligada'
+                      : state === 'speaking'
+                        ? 'Falando'
+                        : state === 'muted'
+                          ? 'Microfone desativado'
+                          : state === 'deafened'
+                            ? 'Áudio desativado'
+                            : 'Conectado'}
                 </small>
               </span>
             </div>
@@ -287,6 +368,7 @@ export function AppShell(props: AppShellProps) {
       <ChannelSidebar
         roomName={props.roomName}
         participants={props.participants}
+        publications={props.publications}
         user={props.user}
         voice={props.voice}
         open={props.channelsOpen}
@@ -296,6 +378,7 @@ export function AppShell(props: AppShellProps) {
       <main className="app-main">{props.children}</main>
       <MemberSidebar
         participants={props.participants}
+        publications={props.publications}
         userId={props.user.id}
         open={props.membersOpen}
         onClose={() => props.onMembersOpenChange(false)}
@@ -342,6 +425,42 @@ export function AppShell(props: AppShellProps) {
               onClick={props.voice.toggleDeafened}
             >
               <HeadphonesIcon aria-hidden="true" />
+            </IconButton>
+            <IconButton
+              label={props.voice.cameraState === 'active' ? 'Desativar câmera' : 'Ativar câmera'}
+              className={props.voice.cameraState === 'active' ? 'is-active' : ''}
+              aria-pressed={props.voice.cameraState === 'active'}
+              onClick={props.voice.toggleCamera}
+              disabled={
+                !props.voice.supportsCamera ||
+                !['idle', 'active', 'error'].includes(props.voice.cameraState)
+              }
+            >
+              {props.voice.cameraState === 'active' ? (
+                <CameraOffIcon aria-hidden="true" />
+              ) : (
+                <CameraIcon aria-hidden="true" />
+              )}
+            </IconButton>
+            <IconButton
+              label={
+                props.voice.screenState === 'active'
+                  ? 'Parar compartilhamento'
+                  : 'Compartilhar tela'
+              }
+              className={props.voice.screenState === 'active' ? 'is-active' : ''}
+              aria-pressed={props.voice.screenState === 'active'}
+              onClick={props.voice.toggleScreenShare}
+              disabled={
+                !props.voice.supportsScreenShare ||
+                !['idle', 'active', 'error'].includes(props.voice.screenState)
+              }
+            >
+              {props.voice.screenState === 'active' ? (
+                <ScreenShareOffIcon aria-hidden="true" />
+              ) : (
+                <ScreenShareIcon aria-hidden="true" />
+              )}
             </IconButton>
             <IconButton label="Desconectar" tone="danger" onClick={props.voice.leave}>
               <ExitIcon aria-hidden="true" />

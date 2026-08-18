@@ -4,14 +4,14 @@ import { useAuth } from '../features/auth/auth-context';
 import { handleInternalLink, navigate } from '../lib/navigation';
 import { Avatar } from './avatar';
 import { Brand } from './brand';
-import { ExitIcon, ShieldIcon } from './icons';
+import { CameraIcon, ExitIcon, ShieldIcon } from './icons';
 
 export function SettingsLayout({
   children,
   active,
 }: {
   children: ReactNode;
-  active: 'account' | 'security';
+  active: 'account' | 'media' | 'security';
 }) {
   const { logout, user } = useAuth();
   if (!user) return null;
@@ -31,6 +31,14 @@ export function SettingsLayout({
             aria-current={active === 'account' ? 'page' : undefined}
           >
             Minha conta
+          </a>
+          <a
+            className={active === 'media' ? 'active' : ''}
+            href="/settings/media"
+            onClick={handleInternalLink}
+            aria-current={active === 'media' ? 'page' : undefined}
+          >
+            <CameraIcon aria-hidden="true" /> Voz e vídeo
           </a>
           <a
             className={active === 'security' ? 'active' : ''}

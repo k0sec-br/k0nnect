@@ -4,6 +4,7 @@ import {
   ROOM_PROTOCOL_VERSION,
   serverRoomMessageSchema,
   type ClientRoomMessage,
+  type MediaPublication,
   type RoomParticipant,
 } from '../../../shared/protocol/room';
 
@@ -22,6 +23,7 @@ export function useRoomSocket(roomId: string | null) {
   const socketRef = useRef<WebSocket | null>(null);
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [participants, setParticipants] = useState<RoomParticipant[]>([]);
+  const [publications, setPublications] = useState<MediaPublication[]>([]);
   const [connectionState, setConnectionState] = useState<RoomConnectionState>('connecting');
   const [message, setMessage] = useState('');
 
@@ -54,6 +56,7 @@ export function useRoomSocket(roomId: string | null) {
         if (roomMessage.type === 'room.ready') {
           setConnectionId(roomMessage.payload.connectionId);
           setParticipants(roomMessage.payload.participants);
+          setPublications(roomMessage.payload.publications);
           setConnectionState('connected');
           setMessage('');
           reconnectAttempt = 0;
@@ -70,6 +73,9 @@ export function useRoomSocket(roomId: string | null) {
           setParticipants((current) =>
             current.filter((participant) => participant.userId !== roomMessage.payload.userId),
           );
+          setPublications((current) =>
+            current.filter((publication) => publication.userId !== roomMessage.payload.userId),
+          );
           return;
         }
         if (roomMessage.type === 'voice.speaking' || roomMessage.type === 'voice.stopped') {
@@ -82,16 +88,19 @@ export function useRoomSocket(roomId: string | null) {
           );
           return;
         }
-        if (roomMessage.type === 'voice.track-published') {
-          setParticipants((current) =>
-            current.map((participant) =>
-              participant.userId === roomMessage.payload.userId
-                ? {
-                    ...participant,
-                    realtimeSessionId: roomMessage.payload.realtimeSessionId,
-                    audioTrackName: roomMessage.payload.trackName,
-                  }
-                : participant,
+        if (roomMessage.type === 'media.published') {
+          setPublications((current) => [
+            ...current.filter(
+              (publication) => publication.publicationId !== roomMessage.payload.publicationId,
+            ),
+            roomMessage.payload,
+          ]);
+          return;
+        }
+        if (roomMessage.type === 'media.unpublished') {
+          setPublications((current) =>
+            current.filter(
+              (publication) => publication.publicationId !== roomMessage.payload.publicationId,
             ),
           );
           return;
@@ -102,6 +111,7 @@ export function useRoomSocket(roomId: string | null) {
       socket.addEventListener('close', (event) => {
         if (!active) return;
         setConnectionId(null);
+        setPublications([]);
         if (!shouldReconnectRoomSocket(event.code)) {
           if (event.code === 4001) {
             setConnectionState('offline');
@@ -166,5 +176,13 @@ export function useRoomSocket(roomId: string | null) {
     [send],
   );
 
-  return { connectionId, connectionState, message, participants, updatePresence, updateSpeaking };
+  return {
+    connectionId,
+    connectionState,
+    message,
+    participants,
+    publications,
+    updatePresence,
+    updateSpeaking,
+  };
 }

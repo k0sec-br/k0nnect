@@ -21,7 +21,7 @@ export function applySecurityHeaders(response: Response): Response {
   headers.set('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   headers.set(
     'Permissions-Policy',
-    'camera=(), display-capture=(), geolocation=(), microphone=(self)',
+    'camera=(self), display-capture=(self), geolocation=(), microphone=(self)',
   );
   headers.set('Referrer-Policy', 'no-referrer');
   headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');

@@ -14,7 +14,8 @@ export const RATE_LIMIT_POLICIES = {
   loginAccount: { name: 'login-account', limit: 20, windowSeconds: 60 },
   recovery: { name: 'recovery', limit: 5, windowSeconds: 60 },
   inviteRedeem: { name: 'invite-redeem', limit: 5, windowSeconds: 60 },
-  realtime: { name: 'realtime', limit: 30, windowSeconds: 60 },
+  realtime: { name: 'realtime', limit: 180, windowSeconds: 60 },
+  realtimePublish: { name: 'realtime-publish', limit: 30, windowSeconds: 60 },
   websocket: { name: 'websocket', limit: 20, windowSeconds: 60 },
   adminInvite: { name: 'admin-invite', limit: 10, windowSeconds: 3_600 },
 } satisfies Record<string, RateLimitPolicy>;
