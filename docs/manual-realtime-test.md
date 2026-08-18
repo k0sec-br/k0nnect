@@ -17,6 +17,7 @@ Execute em produção/staging com contas descartáveis autorizadas. Não grave �
 - [ ] speaking aparece e desaparece sem depender apenas de cor
 - [ ] troca de microfone mantém a chamada
 - [ ] sair encerra trilha e presença
+- [ ] câmera e tela ligadas não alteram mute, deafen ou speaking
 
 ## Resiliência
 
@@ -26,4 +27,4 @@ Execute em produção/staging com contas descartáveis autorizadas. Não grave �
 - [ ] negação da permissão exibe mensagem humana
 - [ ] microfone desconectado permite escolher outro dispositivo ou sair
 
-Registre navegador, sistema, tipo de rede, quantidade de participantes, resultado e request ID correlato quando disponível. Nunca registre SDP, cookies, convite, recovery code ou credencial TURN.
+Continue com o checklist de câmera e tela em [manual-video-test.md](manual-video-test.md). Registre navegador, sistema, tipo de rede, quantidade de participantes, resultado e request ID correlato quando disponível. Nunca registre SDP, cookies, convite, recovery code ou credencial TURN.

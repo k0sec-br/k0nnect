@@ -9,12 +9,13 @@
 | Replay                         | consumo condicional de convite/recovery code e testes de corrida                           |
 | SQL injection                  | D1 prepared statements; schemas estritos antes do repositório                              |
 | XSS                            | React escapa texto, CSP sem inline/eval e nenhuma renderização HTML de conteúdo do usuário |
-| IDOR/role escalation           | identidade da sessão, `requireRole`, `requireRoomAccess` e propriedade de conexão/trilha   |
+| IDOR/role escalation           | identidade da sessão, `requireRole`, sala, conexão e `publicationId` resolvido no servidor |
 | WebSocket abuse                | autenticação, Origin, schemas, tamanho, contagem inválida e janela de mensagens            |
-| Vazamento Realtime             | chamadas privilegiadas somente no Worker; respostas validadas e limitadas                  |
+| Vazamento Realtime             | IDs e secrets internos somente no Worker/DO; respostas públicas validadas e limitadas      |
+| Abuso de mídia                 | uma track por fonte/usuário, reserva atômica e limites de publish/close/subscribe          |
 | Clickjacking/MIME              | `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`                               |
 
-Outros headers incluem HSTS em produção, Referrer-Policy `no-referrer`, Permissions-Policy restritiva e CSP explícita para Realtime/Turnstile. Não há CORS porque frontend e API são same-origin.
+Outros headers incluem HSTS em produção, Referrer-Policy `no-referrer`, Permissions-Policy que libera microfone, câmera e captura de tela somente para `self`, e CSP explícita para Realtime/Turnstile. Não há CORS porque frontend e API são same-origin.
 
 Logs usam request ID, método, rota, status e duração. Não incluem corpos, cookies, tokens, usernames ou IPs. Erros inesperados são sanitizados antes da resposta.
 

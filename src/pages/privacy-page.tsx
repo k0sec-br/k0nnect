@@ -19,23 +19,26 @@ export function PrivacyPage() {
         <section>
           <h2>Dados processados por pouco tempo</h2>
           <p>
-            O endereço IP é usado transitoriamente contra abuso. Informações técnicas de conexão e o
-            áudio WebRTC passam pela infraestrutura Cloudflare. O Turnstile é usado apenas quando
-            uma verificação adaptativa for necessária.
+            O endereço IP é usado transitoriamente contra abuso. Informações técnicas de conexão,
+            microfone, câmera, tela e áudio da tela escolhido pelo usuário passam transitoriamente
+            pela infraestrutura Cloudflare. O Turnstile é usado apenas quando uma verificação
+            adaptativa for necessária.
           </p>
         </section>
         <section>
           <h2>O que não coletamos</h2>
           <p>
             Não coletamos localização precisa, contatos, dados para publicidade, tracking entre
-            sites, fingerprinting de marketing, gravações, transcrições ou conteúdo das conversas.
+            sites, fingerprinting de marketing, gravações, snapshots, miniaturas, transcrições ou
+            conteúdo das conversas. Mídia não é enviada para inteligência artificial.
           </p>
         </section>
         <section>
-          <h2>Áudio em tempo real</h2>
+          <h2>Mídia em tempo real</h2>
           <p>
-            O áudio é transportado em tempo real e não é gravado, armazenado, transcrito ou enviado
-            para sistemas de inteligência artificial pelo k0nnect.
+            Áudio, vídeo e tela são transportados durante a chamada e não são gravados, armazenados
+            ou transcritos pelo k0nnect. A arquitetura usa WebRTC e Cloudflare Realtime e não
+            declara criptografia ponta a ponta.
           </p>
         </section>
       </article>
