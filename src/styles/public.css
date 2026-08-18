@@ -22,7 +22,7 @@
   gap: 0.45rem;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
 }
 .public-security-label > span {
@@ -61,7 +61,7 @@
   margin-top: 2rem;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.74rem;
   text-transform: uppercase;
 }
 .public-principles span::before {
@@ -76,7 +76,7 @@
   min-height: 4rem;
   border-top: 1px solid var(--border-default);
   color: var(--text-tertiary);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
 }
 .public-footer nav {
   display: flex;
@@ -123,7 +123,7 @@
 .privacy-copy {
   margin: 1.25rem 0 0;
   color: var(--text-tertiary);
-  font-size: 0.76rem;
+  font-size: 0.82rem;
   line-height: 1.55;
 }
 .form-grid {
@@ -136,7 +136,7 @@
   gap: 0.5rem 1rem;
   margin: -0.15rem 0 0.25rem;
   color: var(--text-tertiary);
-  font-size: 0.7rem;
+  font-size: 0.76rem;
 }
 .password-requirements span.is-valid {
   color: var(--success);
@@ -166,7 +166,7 @@
   background: var(--surface-root);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   text-align: center;
 }
 .recovery-card > .button.full {
@@ -175,7 +175,7 @@
 .back-link {
   display: inline-block;
   margin-top: 1.25rem;
-  font-size: 0.8rem;
+  font-size: 0.86rem;
 }
 .legal-page {
   width: min(100%, 46rem);
@@ -225,7 +225,7 @@
     min-height: 4rem;
   }
   .public-security-label {
-    font-size: 0.58rem;
+    font-size: 0.64rem;
   }
   .public-introduction {
     padding-top: 1rem;

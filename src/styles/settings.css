@@ -28,7 +28,7 @@
   padding: 0 0.65rem 0.5rem;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -41,7 +41,7 @@
   border-left: 2px solid transparent;
   border-radius: 0 var(--radius-control) var(--radius-control) 0;
   color: var(--text-secondary);
-  font-size: 0.84rem;
+  font-size: 0.9rem;
 }
 .settings-nav a:hover {
   background: var(--surface-hover);
@@ -69,11 +69,11 @@
   gap: 0.55rem;
 }
 .settings-user strong {
-  font-size: 0.78rem;
+  font-size: 0.84rem;
 }
 .settings-user small {
   color: var(--text-tertiary);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
 }
 .settings-sidebar-footer button {
   display: flex;
@@ -86,7 +86,7 @@
   background: transparent;
   color: var(--danger);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: 0.84rem;
 }
 .settings-sidebar-footer button:hover {
   background: var(--danger-subtle);
@@ -125,7 +125,7 @@
 .settings-main-header small {
   margin-top: 0.2rem;
   font-family: var(--font-mono);
-  font-size: 0.52rem;
+  font-size: 0.58rem;
 }
 .settings-content {
   width: min(100% - 3rem, 48rem);
@@ -155,7 +155,7 @@
 .settings-card > p,
 .settings-card-header p {
   color: var(--text-secondary);
-  font-size: 0.84rem;
+  font-size: 0.9rem;
   line-height: 1.6;
 }
 .account-details {
@@ -175,11 +175,11 @@
 }
 .account-details dt {
   color: var(--text-tertiary);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
 }
 .account-details dd {
   margin: 0;
-  font-size: 0.84rem;
+  font-size: 0.9rem;
 }
 .invite-create-row {
   display: grid;
@@ -204,7 +204,7 @@
 }
 .invite-reveal span {
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
 }
 .invite-list,
 .session-list {
@@ -229,13 +229,13 @@
 }
 .invite-list strong,
 .session-list strong {
-  font-size: 0.82rem;
+  font-size: 0.88rem;
 }
 .invite-list article > div span,
 .session-list article > div span {
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 0.7rem;
+  font-size: 0.76rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -243,7 +243,7 @@
   border: 0;
   background: transparent;
   cursor: pointer;
-  font-size: 0.74rem;
+  font-size: 0.8rem;
 }
 .danger-text {
   color: var(--danger);
@@ -251,7 +251,7 @@
 .empty-copy {
   padding: 1rem 0;
   color: var(--text-tertiary);
-  font-size: 0.8rem;
+  font-size: 0.86rem;
 }
 .session-list {
   margin-bottom: 1.2rem;

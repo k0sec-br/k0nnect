@@ -60,6 +60,10 @@
   height: 100%;
   border: 0;
 }
+.rail-home .brand-mark img {
+  width: 2.6rem;
+  height: 2.6rem;
+}
 .rail-separator {
   width: 2rem;
   height: 1px;
@@ -103,7 +107,7 @@
   padding: 0 0.45rem;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -115,7 +119,7 @@
   padding: 0 0.6rem;
   border-radius: var(--radius-control);
   color: var(--text-secondary);
-  font-size: 0.88rem;
+  font-size: 0.94rem;
 }
 .voice-channel:hover,
 .voice-channel.is-active {
@@ -134,13 +138,13 @@
 .channel-member {
   display: grid;
   min-width: 0;
-  grid-template-columns: 1.75rem minmax(0, 1fr) 1rem;
+  grid-template-columns: 2rem minmax(0, 1fr) 1rem;
   gap: 0.45rem;
   align-items: center;
   padding: 0.2rem 0.35rem;
   border-left: 1px solid var(--border-default);
   color: var(--text-tertiary);
-  font-size: 0.76rem;
+  font-size: 0.82rem;
 }
 .channel-member > span {
   overflow: hidden;
@@ -175,14 +179,14 @@
 }
 .voice-connection-panel strong {
   overflow: hidden;
-  font-size: 0.76rem;
+  font-size: 0.82rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .voice-status-label {
   color: var(--success);
   font-family: var(--font-mono);
-  font-size: 0.6rem;
+  font-size: 0.68rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -210,7 +214,7 @@
   background: var(--surface-elevated);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.62rem;
+  font-size: 0.7rem;
 }
 .user-panel {
   display: grid;
@@ -239,11 +243,11 @@
   white-space: nowrap;
 }
 .user-identity strong {
-  font-size: 0.75rem;
+  font-size: 0.82rem;
 }
 .user-identity small {
   color: var(--text-tertiary);
-  font-size: 0.64rem;
+  font-size: 0.7rem;
 }
 .user-actions {
   display: flex;
@@ -289,7 +293,7 @@
 .main-header h1 {
   margin: 0;
   font-family: var(--font-interface);
-  font-size: 0.92rem;
+  font-size: 0.98rem;
   font-weight: 650;
   letter-spacing: -0.01em;
 }
@@ -299,7 +303,7 @@
   gap: 0.4rem;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.68rem;
   text-transform: uppercase;
 }
 .connection-status i {
@@ -349,7 +353,7 @@
 }
 .content-section-heading > span {
   color: var(--text-tertiary);
-  font-size: 0.74rem;
+  font-size: 0.8rem;
 }
 .voice-participant-list {
   display: grid;
@@ -385,13 +389,13 @@
 }
 .voice-participant-copy strong {
   overflow: hidden;
-  font-size: 0.92rem;
+  font-size: 0.98rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .voice-participant-copy span {
   color: var(--text-tertiary);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
 }
 .voice-participant.is-speaking .voice-participant-copy span {
   color: var(--accent-hover);
@@ -437,7 +441,7 @@
 .desktop-join-bar p {
   margin: 0;
   color: var(--text-tertiary);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
 }
 .member-sidebar {
   border-left: 1px solid var(--border-default);
@@ -447,7 +451,7 @@
   padding: 0 0.8rem;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 0.64rem;
+  font-size: 0.7rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -480,11 +484,11 @@
   white-space: nowrap;
 }
 .member-item strong {
-  font-size: 0.78rem;
+  font-size: 0.84rem;
 }
 .member-item small {
   color: var(--text-tertiary);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
 }
 .member-item.is-speaking small {
   color: var(--accent-hover);

@@ -37,7 +37,7 @@ export function Avatar({
 
   return (
     <span className={`avatar avatar-${size} avatar-${state}`} aria-hidden="true">
-      {getInitials(displayName)}
+      <span className="avatar-initials">{getInitials(displayName)}</span>
       <span className="status-indicator" title={stateLabel[state]} />
     </span>
   );

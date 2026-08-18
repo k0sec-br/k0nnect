@@ -16,9 +16,11 @@
   border: 1px solid var(--accent);
   border-radius: var(--radius-control);
   color: var(--accent-hover);
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  letter-spacing: -0.04em;
+}
+.brand-mark img {
+  width: 1.8rem;
+  height: 1.8rem;
+  object-fit: contain;
 }
 .brand-word {
   letter-spacing: -0.045em;
@@ -124,7 +126,7 @@
   color: var(--text-primary);
   box-shadow: 0 0.4rem 1.2rem rgb(0 0 0 / 35%);
   content: attr(data-tooltip);
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   opacity: 0;
   pointer-events: none;
   transform: translateX(50%);
@@ -139,7 +141,7 @@ label {
   display: block;
   margin-bottom: 0.45rem;
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: 0.86rem;
   font-weight: 600;
 }
 input,
@@ -182,7 +184,7 @@ input::placeholder {
   padding: 0.7rem 0.8rem;
   border: 1px solid currentColor;
   border-radius: var(--radius-control);
-  font-size: 0.82rem;
+  font-size: 0.86rem;
   line-height: 1.45;
 }
 .form-message.error {
@@ -220,7 +222,7 @@ input::placeholder {
   display: block;
   color: var(--accent-hover);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -232,7 +234,7 @@ input::placeholder {
   border: 1px solid var(--border-strong);
   border-radius: 3px;
   color: var(--text-secondary);
-  font-size: 0.7rem;
+  font-size: 0.74rem;
 }
 .status-chip.available {
   border-color: rgb(85 201 149 / 35%);
@@ -257,23 +259,30 @@ input::placeholder {
   position: relative;
   display: grid;
   flex: 0 0 auto;
-  place-items: center;
+  place-content: center;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
   background: var(--surface-elevated);
   color: var(--text-secondary);
   font-family: var(--font-heading);
   font-weight: 650;
+  line-height: 1;
+  text-align: center;
+}
+.avatar-initials {
+  display: block;
+  line-height: 1;
+  transform: translateY(-0.01em);
 }
 .avatar-small {
-  width: 1.75rem;
-  height: 1.75rem;
-  font-size: 0.65rem;
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.72rem;
 }
 .avatar-medium {
-  width: 2.4rem;
-  height: 2.4rem;
-  font-size: 0.8rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 0.84rem;
 }
 .avatar-large {
   width: 3.25rem;
