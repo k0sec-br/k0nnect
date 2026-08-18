@@ -55,6 +55,14 @@ No desktop amplo, o shell contém rail de grupos, canais, conteúdo e membros. E
 
 A área principal da sala usa `AudioOnlyView`, isolada do shell, para aceitar futuramente visualizações de vídeo ou compartilhamento sem reestruturar a navegação.
 
+## Layout de configurações
+
+No desktop, configurações usam uma sidebar fixa de navegação e uma área de conteúdo centralizada com largura máxima de 960 px. Conta, dispositivos e segurança formam o grupo pessoal; convites aparecem em Administração somente para owner e admin. Cada área possui rota própria, mantendo a leitura e o foco de teclado previsíveis.
+
+Abaixo de 760 px, a sidebar vira um menu sobreposto acionado pelo cabeçalho. A página selecionada ocupa toda a largura disponível, formulários passam para uma coluna e listas administrativas preservam linhas compactas. O fechamento pelo controle superior ou pela tecla `Escape` retorna à aplicação.
+
+Informações de conta usam identidade, username e badge de role. Convites usam metadados contextuais e status textual, com confirmação explícita antes da revogação. Bordas e espaçamento separam seções sem transformar cada bloco em card.
+
 ## Acessibilidade
 
 O sistema exige HTML semântico, um único título principal por tela, labels de formulário, foco visível, nomes acessíveis, `aria-current`, `aria-expanded`, alvos de toque adequados e contraste compatível com o tema escuro. Conteúdo não depende somente de cor para comunicar estado.
