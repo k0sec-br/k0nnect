@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.wrangler/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+*.local
+*.log
+.DS_Store
+worker-configuration.d.ts.tmp

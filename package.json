@@ -1,0 +1,62 @@
+{
+  "name": "k0nnect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "CLOUDFLARE_ENV=production vite build",
+    "preview": "vite preview",
+    "deploy": "pnpm build && wrangler deploy --env production",
+    "deploy:dry-run": "pnpm build && wrangler deploy --env production --dry-run",
+    "types:worker": "wrangler types",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit && tsc -p tests/tsconfig.json --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "playwright test",
+    "db:migrate:local": "wrangler d1 migrations apply k0nnect --local",
+    "db:migrate:remote": "wrangler d1 migrations apply k0nnect --remote --env production",
+    "setup:local": "tsx scripts/setup-local.ts",
+    "invite:create": "tsx scripts/create-invite.ts",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "audit:dependencies": "pnpm audit --audit-level high"
+  },
+  "dependencies": {
+    "hono": "4.13.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.52.1",
+    "@cloudflare/vitest-pool-workers": "0.21.3",
+    "@cloudflare/workers-types": "5.20260817.1",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.62.1",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "eslint": "10.0.1",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.4",
+    "globals": "17.11.0",
+    "prettier": "3.9.6",
+    "tsx": "4.23.12",
+    "typescript": "6.0.2",
+    "typescript-eslint": "8.67.0",
+    "vite": "8.2.1",
+    "vitest": "4.1.10",
+    "wrangler": "4.123.0"
+  }
+}

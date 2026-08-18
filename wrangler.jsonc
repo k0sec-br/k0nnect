@@ -1,0 +1,66 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "k0nnect-dev",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "k0nnect",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "VOICE_ROOMS", "class_name": "VoiceRoom" },
+      { "name": "SECURITY_GATES", "class_name": "SecurityGate" },
+    ],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VoiceRoom", "SecurityGate"] }],
+  "triggers": { "crons": ["0 4 * * *"] },
+  "vars": {
+    "ENVIRONMENT": "development",
+    "APP_ORIGIN": "http://localhost:5173",
+    "REGISTRATION_MODE": "invite",
+    "REALTIME_ENABLED": "false",
+    "TURNSTILE_ENABLED": "false",
+    "TURNSTILE_SITE_KEY": "",
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+  "env": {
+    "production": {
+      "name": "k0nnect",
+      "routes": [{ "pattern": "connect.k0sec.org", "custom_domain": true }],
+      "durable_objects": {
+        "bindings": [
+          { "name": "VOICE_ROOMS", "class_name": "VoiceRoom" },
+          { "name": "SECURITY_GATES", "class_name": "SecurityGate" },
+        ],
+      },
+      "vars": {
+        "ENVIRONMENT": "production",
+        "APP_ORIGIN": "https://connect.k0sec.org",
+        "REGISTRATION_MODE": "invite",
+        "REALTIME_ENABLED": "true",
+        "TURNSTILE_ENABLED": "true",
+        "TURNSTILE_SITE_KEY": "",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "k0nnect",
+          "migrations_dir": "migrations",
+        },
+      ],
+    },
+  },
+}
