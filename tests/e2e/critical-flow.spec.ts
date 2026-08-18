@@ -76,6 +76,9 @@ async function installBrowserFakes(page: Page): Promise<void> {
       getReceivers() {
         return [];
       }
+      getTransceivers() {
+        return [{ mid: '0', sender: this.sender }];
+      }
       async createOffer() {
         return { type: 'offer', sdp: 'v=0' };
       }
@@ -159,10 +162,12 @@ async function mockApi(page: Page): Promise<void> {
         rooms: [{ id: 'room_general', slug: 'geral', name: 'Geral', kind: 'voice', position: 0 }],
       };
     } else if (path === '/api/realtime/session') {
-      const action = (request.postDataJSON() as { action: string }).action;
+      const realtimeRequest = request.postDataJSON() as { action: string; mid?: string };
+      const { action } = realtimeRequest;
       if (action === 'turn') data = { iceServers: [] };
       else if (action === 'create') data = { sessionId: 'session_1' };
       else if (action === 'publish') {
+        expect(realtimeRequest.mid).toBe('0');
         data = {
           sessionDescription: { type: 'answer', sdp: 'v=0' },
           tracks: [{ trackName: 'audio_track_1' }],

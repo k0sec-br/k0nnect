@@ -66,6 +66,7 @@ realtimeRoutes.post('/session', async (context) => {
     const response = await realtime.publishAudio(
       input.sessionId,
       input.sessionDescription,
+      input.mid,
       requestedTrackName,
     );
     const trackName = response.tracks[0]?.trackName;

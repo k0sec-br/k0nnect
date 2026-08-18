@@ -58,11 +58,16 @@ export class RealtimeAudioClient {
     this.sessionId = session.sessionId;
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
+    const mid = peerConnection
+      .getTransceivers()
+      .find((transceiver) => transceiver.sender.track === track)?.mid;
+    if (!mid) throw new DOMException('Faixa de áudio sem identificador', 'InvalidStateError');
     const published = await apiClient.post<SessionDescriptionResponse>('/api/realtime/session', {
       action: 'publish',
       roomId: this.roomId,
       connectionId: this.connectionId,
       sessionId: session.sessionId,
+      mid,
       sessionDescription: { type: 'offer', sdp: offer.sdp },
     });
     await peerConnection.setRemoteDescription(published.sessionDescription);

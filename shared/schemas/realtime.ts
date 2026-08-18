@@ -11,6 +11,7 @@ const realtimeIdentifierSchema = z
   .min(1)
   .max(128)
   .regex(/^[a-zA-Z0-9_-]+$/);
+const transceiverMidSchema = z.string().min(1).max(32);
 const sdpSchema = z.string().min(1).max(524_288);
 
 export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
@@ -23,6 +24,7 @@ export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
       roomId: roomIdSchema,
       connectionId: connectionIdSchema,
       sessionId: realtimeIdentifierSchema,
+      mid: transceiverMidSchema,
       sessionDescription: z.object({ type: z.literal('offer'), sdp: sdpSchema }).strict(),
     })
     .strict(),

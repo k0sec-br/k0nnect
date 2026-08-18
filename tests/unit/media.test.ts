@@ -29,9 +29,14 @@ describe('camada de mídia', () => {
       roomId: 'room_general',
       connectionId: crypto.randomUUID(),
       sessionId: 'session_1',
+      mid: '0',
       sessionDescription: { type: 'offer', sdp: 'v=0' },
     };
     expect(realtimeSessionRequestSchema.safeParse(baseRequest).success).toBe(true);
+    expect(realtimeSessionRequestSchema.safeParse({ ...baseRequest, mid: '' }).success).toBe(false);
+    expect(realtimeSessionRequestSchema.safeParse({ ...baseRequest, mid: undefined }).success).toBe(
+      false,
+    );
     expect(
       realtimeSessionRequestSchema.safeParse({ ...baseRequest, mediaKind: 'video' }).success,
     ).toBe(false);

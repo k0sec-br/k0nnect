@@ -77,6 +77,7 @@ export class CloudflareRealtimeClient {
   async publishAudio(
     sessionId: string,
     sessionDescription: { type: 'offer'; sdp: string },
+    mid: string,
     trackName: string,
   ) {
     const response = await this.request(
@@ -84,7 +85,7 @@ export class CloudflareRealtimeClient {
       'POST',
       {
         sessionDescription,
-        tracks: [{ location: 'local', trackName }],
+        tracks: [{ location: 'local', mid, trackName }],
       },
     );
     return tracksResponseSchema.parse(response);
