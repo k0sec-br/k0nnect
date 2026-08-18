@@ -66,9 +66,12 @@ export function MediaSettingsPage() {
 
   return (
     <SettingsLayout active="media">
-      <section className="settings-card" aria-labelledby="voice-video-title">
-        <h2 id="voice-video-title">Voz e vídeo</h2>
-        <p>Escolha os dispositivos usados ao entrar em uma chamada.</p>
+      <section className="settings-section" aria-labelledby="voice-video-title">
+        <header className="settings-section-header">
+          <span className="eyebrow">Dispositivos</span>
+          <h2 id="voice-video-title">Voz e vídeo</h2>
+          <p>Escolha os dispositivos usados ao entrar em uma chamada.</p>
+        </header>
         <div className="media-settings-fields">
           <label>
             Microfone

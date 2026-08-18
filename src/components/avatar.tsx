@@ -22,10 +22,12 @@ export function Avatar({
   displayName,
   state = 'online',
   size = 'medium',
+  showStatus = true,
 }: {
   displayName: string;
   state?: PresenceState;
   size?: 'small' | 'medium' | 'large';
+  showStatus?: boolean;
 }) {
   const stateLabel: Record<PresenceState, string> = {
     online: 'Online',
@@ -38,7 +40,7 @@ export function Avatar({
   return (
     <span className={`avatar avatar-${size} avatar-${state}`} aria-hidden="true">
       <span className="avatar-initials">{getInitials(displayName)}</span>
-      <span className="status-indicator" title={stateLabel[state]} />
+      {showStatus && <span className="status-indicator" title={stateLabel[state]} />}
     </span>
   );
 }

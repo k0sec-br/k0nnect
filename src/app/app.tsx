@@ -4,6 +4,7 @@ import { useAuth } from '../features/auth/auth-context';
 import { navigate, usePathname } from '../lib/navigation';
 import { AppPage } from '../pages/app-page';
 import { InvitePage } from '../pages/invite-page';
+import { InvitesSettingsPage } from '../pages/invites-settings-page';
 import { LoginPage } from '../pages/login-page';
 import { MediaSettingsPage } from '../pages/media-settings-page';
 import { PrivacyPage } from '../pages/privacy-page';
@@ -44,6 +45,12 @@ export function App() {
     return (
       <ProtectedRoute>
         <SecuritySettingsPage />
+      </ProtectedRoute>
+    );
+  if (pathname === '/settings/invites')
+    return (
+      <ProtectedRoute>
+        <InvitesSettingsPage />
       </ProtectedRoute>
     );
   if (pathname === '/settings/media')

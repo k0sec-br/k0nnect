@@ -63,9 +63,12 @@ export function SecuritySettingsPage() {
 
   return (
     <SettingsLayout active="security">
-      <section className="settings-card" aria-labelledby="sessions-title">
-        <p className="eyebrow">Acesso</p>
-        <h2 id="sessions-title">Sessões ativas</h2>
+      <section className="settings-section" aria-labelledby="sessions-title">
+        <header className="settings-section-header">
+          <span className="eyebrow">Acesso</span>
+          <h2 id="sessions-title">Sessões ativas</h2>
+          <p>Revise os acessos associados à sua conta.</p>
+        </header>
         <div className="session-list">
           {sessions.map((session) => (
             <article key={session.id}>
@@ -87,10 +90,12 @@ export function SecuritySettingsPage() {
           Sair de todas as sessões
         </button>
       </section>
-      <section className="settings-card" aria-labelledby="codes-title">
-        <p className="eyebrow">Recuperação</p>
-        <h2 id="codes-title">Gerar novos códigos</h2>
-        <p>Os códigos atuais deixarão de funcionar. Confirme sua senha para continuar.</p>
+      <section className="settings-section" aria-labelledby="codes-title">
+        <header className="settings-section-header">
+          <span className="eyebrow">Recuperação</span>
+          <h2 id="codes-title">Gerar novos códigos</h2>
+          <p>Os códigos atuais deixarão de funcionar. Confirme sua senha para continuar.</p>
+        </header>
         <form onSubmit={(event) => void regenerate(event)}>
           <label htmlFor="reauth-password">Senha atual</label>
           <input
