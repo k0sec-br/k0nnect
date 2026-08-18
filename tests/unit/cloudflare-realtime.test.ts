@@ -46,7 +46,7 @@ describe('CloudflareRealtimeClient', () => {
       ),
     );
     const client = new CloudflareRealtimeClient(TEST_ENV);
-    await client.subscribeTrack('local', 'remote', 'track', 'camera', 'b-medium');
+    await client.subscribeTrack('local', 'remote', 'track', 'camera', 'b');
     await client.subscribeTrack('local', 'remote', 'screen', 'screen-video');
 
     const cameraBody = parsedRequestBody(fetchMock.mock.calls[0]?.[1]?.body) as {
@@ -56,7 +56,7 @@ describe('CloudflareRealtimeClient', () => {
       tracks: { simulcast?: unknown }[];
     };
     expect(cameraBody.tracks[0]?.simulcast).toEqual({
-      preferredRid: 'b-medium',
+      preferredRid: 'b',
       priorityOrdering: 'asciibetical',
       ridNotAvailable: 'asciibetical',
     });

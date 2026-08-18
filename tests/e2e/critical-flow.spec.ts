@@ -116,7 +116,12 @@ async function installBrowserFakes(page: Page): Promise<void> {
         mid: string;
         sender: { track: unknown; replaceTrack(track: unknown): Promise<void> };
       }[] = [];
-      addTransceiver(track: unknown) {
+      addTransceiver(track: unknown, options?: RTCRtpTransceiverInit) {
+        for (const encoding of options?.sendEncodings ?? []) {
+          if (encoding.rid && !/^[A-Za-z0-9]+$/u.test(encoding.rid)) {
+            throw new DOMException('RID inválido', 'InvalidAccessError');
+          }
+        }
         const sender = {
           track,
           async replaceTrack(nextTrack: unknown) {

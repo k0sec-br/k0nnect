@@ -348,7 +348,7 @@ export function useVoiceSession({
       setCameraState('active');
       await refreshDevices();
     } catch (caught) {
-      track?.stop();
+      cameraManagerRef.current?.stop();
       setCameraState('error');
       setError(mediaErrorMessage(caught, 'câmera'));
       setCameraState('idle');

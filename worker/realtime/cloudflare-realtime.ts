@@ -104,7 +104,7 @@ export class CloudflareRealtimeClient {
     const simulcast =
       source === 'camera'
         ? {
-            preferredRid: preferredRid ?? 'b-medium',
+            preferredRid: preferredRid ?? 'b',
             priorityOrdering: 'asciibetical',
             ridNotAvailable: 'asciibetical',
           }

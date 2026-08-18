@@ -32,9 +32,9 @@ export interface RemoteMediaTrack {
 }
 
 const VIDEO_ENCODINGS: RTCRtpEncodingParameters[] = [
-  { rid: 'a-high', maxBitrate: 2_500_000, scaleResolutionDownBy: 1 },
-  { rid: 'b-medium', maxBitrate: 900_000, scaleResolutionDownBy: 2 },
-  { rid: 'c-low', maxBitrate: 250_000, scaleResolutionDownBy: 4 },
+  { rid: 'a', maxBitrate: 2_500_000, scaleResolutionDownBy: 1 },
+  { rid: 'b', maxBitrate: 900_000, scaleResolutionDownBy: 2 },
+  { rid: 'c', maxBitrate: 250_000, scaleResolutionDownBy: 4 },
 ];
 
 export class MediaSessionManager {
@@ -173,7 +173,7 @@ export class MediaSessionManager {
         connectionId: this.connectionId,
         sessionId,
         publicationId: publication.publicationId,
-        ...(publication.source === 'camera' ? { preferredRid: 'b-medium' } : {}),
+        ...(publication.source === 'camera' ? { preferredRid: 'b' } : {}),
       });
       this.remotePublicationByMid.set(response.mid, response.publication);
       try {
