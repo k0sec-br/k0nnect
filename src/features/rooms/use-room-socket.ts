@@ -9,6 +9,10 @@ import {
 
 export type RoomConnectionState = 'connected' | 'connecting' | 'offline' | 'reconnecting';
 
+export function shouldReconnectRoomSocket(closeCode: number): boolean {
+  return closeCode !== 1000 && closeCode !== 4001;
+}
+
 function reconnectJitter(maximum: number): number {
   const random = crypto.getRandomValues(new Uint32Array(1))[0] ?? 0;
   return Math.floor((random / 0xffff_ffff) * maximum);
@@ -96,8 +100,15 @@ export function useRoomSocket(roomId: string | null) {
       });
 
       socket.addEventListener('close', (event) => {
-        if (!active || event.code === 1000) return;
+        if (!active) return;
         setConnectionId(null);
+        if (!shouldReconnectRoomSocket(event.code)) {
+          if (event.code === 4001) {
+            setConnectionState('offline');
+            setMessage('Esta conta foi conectada à sala em outro dispositivo.');
+          }
+          return;
+        }
         reconnectAttempt += 1;
         if (reconnectAttempt > 8) {
           setConnectionState('offline');
