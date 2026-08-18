@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { PASSWORD_ITERATIONS } from '../../shared/constants/security';
+import {
+  CLOUDFLARE_PBKDF2_MAX_ITERATIONS,
+  PASSWORD_ITERATIONS,
+} from '../../shared/constants/security';
 import { hashPassword, verifyPassword } from '../../worker/crypto/password';
 import { generateOpaqueToken, generateRecoveryCodes, sha256 } from '../../worker/crypto/tokens';
 
@@ -19,6 +22,11 @@ describe('criptografia de credenciais', () => {
     expect(record.iterations).toBe(PASSWORD_ITERATIONS);
     expect(await verifyPassword('uma-senha-muito-segura', 'pepper-de-teste', record)).toBe(true);
     expect(await verifyPassword('uma-senha-incorreta', 'pepper-de-teste', record)).toBe(false);
+  });
+
+  it('mantém o custo PBKDF2 dentro do limite do runtime de produção', () => {
+    expect(PASSWORD_ITERATIONS).toBe(CLOUDFLARE_PBKDF2_MAX_ITERATIONS);
+    expect(PASSWORD_ITERATIONS).toBe(100_000);
   });
 
   it('gera dez recovery codes únicos e legíveis', () => {

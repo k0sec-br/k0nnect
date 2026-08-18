@@ -1,4 +1,5 @@
 import {
+  CLOUDFLARE_PBKDF2_MAX_ITERATIONS,
   PASSWORD_HASH_BYTES,
   PASSWORD_ITERATIONS,
   PASSWORD_SALT_BYTES,
@@ -35,17 +36,13 @@ async function derivePassword(
   return new Uint8Array(bits);
 }
 
-export async function hashPassword(
-  password: string,
-  pepper: string,
-  iterations = PASSWORD_ITERATIONS,
-): Promise<PasswordRecord> {
+export async function hashPassword(password: string, pepper: string): Promise<PasswordRecord> {
   const salt = randomBytes(PASSWORD_SALT_BYTES);
-  const hash = await derivePassword(password, pepper, salt, iterations);
+  const hash = await derivePassword(password, pepper, salt, PASSWORD_ITERATIONS);
   return {
     hash: bytesToBase64Url(hash),
     salt: bytesToBase64Url(salt),
-    iterations,
+    iterations: PASSWORD_ITERATIONS,
     version: PASSWORD_VERSION,
   };
 }
@@ -55,7 +52,13 @@ export async function verifyPassword(
   pepper: string,
   record: PasswordRecord,
 ): Promise<boolean> {
-  if (record.version !== PASSWORD_VERSION || record.iterations < PASSWORD_ITERATIONS) return false;
+  if (
+    record.version !== PASSWORD_VERSION ||
+    record.iterations < PASSWORD_ITERATIONS ||
+    record.iterations > CLOUDFLARE_PBKDF2_MAX_ITERATIONS
+  ) {
+    return false;
+  }
   const expected = base64UrlToBytes(record.hash);
   const actual = await derivePassword(
     password,
