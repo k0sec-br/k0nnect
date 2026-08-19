@@ -138,6 +138,18 @@
   width: 1rem;
   height: 1rem;
 }
+.voice-channel-call:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.voice-channel-copy {
+  display: grid;
+  gap: 0.04rem;
+}
+.voice-channel-copy small {
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+}
 .channel-members {
   display: grid;
   gap: 0.12rem;
@@ -720,21 +732,71 @@
   color: var(--text-tertiary);
 }
 .message-actions {
+  position: absolute;
+  z-index: 2;
+  top: 0.2rem;
+  right: 0.35rem;
   display: flex;
-  align-self: start;
-  gap: 0.25rem;
+  gap: 0.1rem;
   opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
 }
 .chat-message:hover .message-actions,
 .chat-message:focus-within .message-actions {
   opacity: 1;
+  pointer-events: auto;
 }
-.message-actions button {
+.message-actions .icon-button {
+  width: 1.9rem;
+  height: 1.9rem;
+  background: var(--surface-deep);
   color: var(--text-tertiary);
-  font-size: 0.7rem;
 }
-.message-actions button:hover {
+.message-actions .icon-button svg,
+.mobile-message-actions .icon-button svg {
+  width: 0.92rem;
+  height: 0.92rem;
+}
+.message-actions .icon-button:hover {
   color: var(--text-primary);
+}
+.message-actions .icon-button:last-child:hover {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+.mobile-message-actions {
+  display: none;
+}
+.message-edit-form {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+.message-edit-form textarea {
+  min-height: 2.3rem;
+  resize: vertical;
+}
+.message-edit-form small {
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+}
+.message-delete-confirm {
+  grid-column: 2;
+  display: grid;
+  gap: 0.45rem;
+  margin-top: -0.15rem;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+.message-delete-confirm > div {
+  display: flex;
+  gap: 0.35rem;
+}
+.message-delete-confirm .button {
+  min-height: 1.9rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.7rem;
 }
 .message-composer {
   position: relative;
@@ -781,6 +843,7 @@
 .global-call-bar > div {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .global-call-bar span {
   color: var(--text-tertiary);
@@ -1296,7 +1359,46 @@
     justify-self: start;
   }
   .message-actions {
-    grid-column: 2;
-    opacity: 1;
+    display: none;
+  }
+  .mobile-message-actions {
+    position: absolute;
+    top: 0.2rem;
+    right: 0.35rem;
+    display: block;
+  }
+  .mobile-message-actions .icon-button {
+    width: 1.9rem;
+    height: 1.9rem;
+  }
+  .mobile-message-menu {
+    position: absolute;
+    z-index: 3;
+    top: 2.15rem;
+    right: 0;
+    display: grid;
+    min-width: 8.5rem;
+    padding: 0.25rem;
+    border: 1px solid var(--border-default);
+    background: var(--surface-elevated);
+  }
+  .mobile-message-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2.2rem;
+    padding: 0 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    text-align: left;
+  }
+  .mobile-message-menu button:hover,
+  .mobile-message-menu button:focus-visible {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+  .mobile-message-menu .danger-text:hover,
+  .mobile-message-menu .danger-text:focus-visible {
+    color: var(--danger);
   }
 }

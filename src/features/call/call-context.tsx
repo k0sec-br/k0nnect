@@ -35,6 +35,7 @@ interface CallContextValue {
   callConversation: ConversationSummary | null;
   selectConversation(conversationId: string): void;
   selectCallConversation(conversationId: string): void;
+  joinConversationCall(conversationId: string): void;
   room: RoomView | null;
   socket: Omit<ReturnType<typeof useServerRealtime>, 'participants'> & {
     participants: RoomParticipant[];
@@ -120,6 +121,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
     socket,
     voice,
   });
+  const joinConversationCall = useCallback(
+    (conversationId: string) => {
+      const conversation = bootstrap?.conversations.find((item) => item.id === conversationId);
+      if (!conversation?.callRoomId) return;
+      setCallConversationId(conversationId);
+      void voice.join(false, conversation.callRoomId);
+    },
+    [bootstrap?.conversations, voice.join],
+  );
 
   const value = useMemo<CallContextValue>(
     () => ({
@@ -131,6 +141,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       callConversation,
       selectConversation: setSelectedConversationId,
       selectCallConversation: setCallConversationId,
+      joinConversationCall,
       connectionState: supervisor.state,
       loadError,
       members,
@@ -142,6 +153,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       bootstrap,
       callConversation,
       config,
+      joinConversationCall,
       loadError,
       members,
       room,

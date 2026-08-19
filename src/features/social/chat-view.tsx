@@ -17,14 +17,24 @@ import type {
 } from '../../../shared/types/api';
 import { Avatar } from '../../components/avatar';
 import { FormMessage } from '../../components/form-message';
-import { MenuIcon, UsersIcon, VolumeIcon } from '../../components/icons';
+import { IconButton } from '../../components/icon-button';
+import {
+  MenuIcon,
+  MoreIcon,
+  PencilIcon,
+  TrashIcon,
+  UsersIcon,
+  VolumeIcon,
+} from '../../components/icons';
 import { apiClient } from '../../lib/api-client';
+import { chatAuthorUsername } from './chat-author';
 import { GroupManagementDialog } from './group-management-dialog';
 
 interface ChatViewProps {
   conversation: ConversationSummary | null;
   recipient: SocialUserView | null;
   currentUserId: string;
+  currentUsername: string;
   getMessages(conversationId: string | null): ChatMessageView[];
   isHistoryLoaded(conversationId: string | null): boolean;
   subscribeChat(conversationId: string | null, listener: () => void): () => void;
@@ -44,6 +54,50 @@ interface ChatViewProps {
   onGroupLeft(): void;
 }
 
+function MessageActions({
+  mobileMenuOpen,
+  onDelete,
+  onEdit,
+  onMobileMenuToggle,
+}: {
+  mobileMenuOpen: boolean;
+  onDelete(): void;
+  onEdit(): void;
+  onMobileMenuToggle(): void;
+}) {
+  return (
+    <>
+      <div className="message-actions" aria-label="Ações da mensagem">
+        <IconButton label="Editar mensagem" onClick={onEdit}>
+          <PencilIcon aria-hidden="true" />
+        </IconButton>
+        <IconButton label="Excluir mensagem" onClick={onDelete}>
+          <TrashIcon aria-hidden="true" />
+        </IconButton>
+      </div>
+      <div className="mobile-message-actions">
+        <IconButton
+          label="Abrir ações da mensagem"
+          aria-expanded={mobileMenuOpen}
+          onClick={onMobileMenuToggle}
+        >
+          <MoreIcon aria-hidden="true" />
+        </IconButton>
+        {mobileMenuOpen && (
+          <div className="mobile-message-menu" role="menu" aria-label="Ações da mensagem">
+            <button type="button" role="menuitem" onClick={onEdit}>
+              <PencilIcon aria-hidden="true" /> Editar
+            </button>
+            <button type="button" role="menuitem" className="danger-text" onClick={onDelete}>
+              <TrashIcon aria-hidden="true" /> Excluir
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 export function ChatView(props: ChatViewProps) {
   const [content, setContent] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -52,7 +106,12 @@ export function ChatView(props: ChatViewProps) {
   const [canLoadOlder, setCanLoadOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [newMessageAvailable, setNewMessageAvailable] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
+  const [editingContent, setEditingContent] = useState('');
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<number | null>(null);
+  const [mobileMenuMessageId, setMobileMenuMessageId] = useState<number | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const editInputRef = useRef<HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const nearEndRef = useRef(true);
   const previousMessageCountRef = useRef(0);
@@ -117,6 +176,13 @@ export function ChatView(props: ChatViewProps) {
     previousMessageCountRef.current = messages.length;
   }, [messages]);
 
+  useEffect(() => {
+    if (editingMessageId === null) return;
+    const input = editInputRef.current;
+    input?.focus();
+    input?.setSelectionRange(input.value.length, input.value.length);
+  }, [editingMessageId]);
+
   async function loadOlder() {
     if (!conversationId || loadingOlder) return;
     const oldest = messages.find((message) => message.id > 0);
@@ -162,29 +228,37 @@ export function ChatView(props: ChatViewProps) {
       : ({ recipientUserId: props.recipient!.id } as const);
   }
 
-  function senderName(message: ChatMessageView): string {
-    if (message.senderId === props.currentUserId) return 'Você';
-    return (
-      props.conversation?.members.find((member) => member.id === message.senderId)?.displayName ??
-      props.recipient?.displayName ??
-      'Membro'
-    );
+  function startEdit(message: ChatMessageView) {
+    setEditingMessageId(message.id);
+    setEditingContent(message.content ?? '');
+    setDeleteConfirmationId(null);
+    setMobileMenuMessageId(null);
   }
 
-  async function edit(message: ChatMessageView) {
-    const nextContent = window.prompt('Editar mensagem', message.content ?? '');
-    if (!nextContent?.trim() || nextContent === message.content) return;
+  function cancelEdit() {
+    setEditingMessageId(null);
+    setEditingContent('');
+  }
+
+  async function saveEdit(message: ChatMessageView) {
+    const nextContent = editingContent.trim();
+    if (!nextContent || nextContent === message.content) {
+      cancelEdit();
+      return;
+    }
     try {
       await apiClient.post(`/api/social/messages/${message.id}`, { content: nextContent });
+      cancelEdit();
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'Não foi possível editar a mensagem.');
     }
   }
 
   async function remove(message: ChatMessageView) {
-    if (!window.confirm('Apagar esta mensagem?')) return;
     try {
       await apiClient.delete(`/api/social/messages/${message.id}`);
+      setDeleteConfirmationId(null);
+      setMobileMenuMessageId(null);
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'Não foi possível apagar a mensagem.');
     }
@@ -259,54 +333,128 @@ export function ChatView(props: ChatViewProps) {
             <p>Este é o início desta conversa.</p>
           </div>
         )}
-        {messages.map((message) => (
-          <article
-            className={`chat-message ${message.deliveryState === 'sending' ? 'is-pending' : ''} ${message.deliveryState === 'failed' ? 'is-failed' : ''}`}
-            key={`${message.clientMessageId}-${message.id}`}
-          >
-            <Avatar displayName={senderName(message)} size="small" />
-            <div>
-              <header>
-                <strong>{senderName(message)}</strong>
-                <time dateTime={message.createdAt}>
-                  {new Date(message.createdAt).toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </time>
-                {message.editedAt && <small>(editada)</small>}
-              </header>
-              <p>{message.deletedAt ? <em>Mensagem apagada</em> : message.content}</p>
-              {message.deliveryState === 'failed' && (
-                <div className="message-failure" role="status">
-                  Não foi possível enviar.
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void props.onSend(
-                        messageTarget(),
-                        message.content ?? '',
-                        message.clientMessageId,
-                      )
-                    }
+        {messages.map((message) => {
+          const author = chatAuthorUsername({
+            message,
+            currentUserId: props.currentUserId,
+            currentUsername: props.currentUsername,
+            conversation: props.conversation,
+            recipient: props.recipient,
+          });
+          return (
+            <article
+              className={`chat-message ${message.deliveryState === 'sending' ? 'is-pending' : ''} ${message.deliveryState === 'failed' ? 'is-failed' : ''}`}
+              key={`${message.clientMessageId}-${message.id}`}
+            >
+              <Avatar displayName={author.slice(1)} size="small" />
+              <div>
+                <header>
+                  <strong>{author}</strong>
+                  <time dateTime={message.createdAt}>
+                    {new Date(message.createdAt).toLocaleTimeString('pt-BR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </time>
+                  {message.editedAt && <small>(editada)</small>}
+                </header>
+                {editingMessageId === message.id ? (
+                  <form
+                    className="message-edit-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveEdit(message);
+                    }}
                   >
-                    Tentar novamente
-                  </button>
+                    <textarea
+                      ref={editInputRef}
+                      value={editingContent}
+                      onChange={(event) => setEditingContent(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          event.preventDefault();
+                          cancelEdit();
+                        }
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                          event.preventDefault();
+                          event.currentTarget.form?.requestSubmit();
+                        }
+                      }}
+                      maxLength={2000}
+                      rows={1}
+                    />
+                    <small>
+                      Enter para salvar · Shift+Enter para nova linha · Esc para cancelar
+                    </small>
+                  </form>
+                ) : (
+                  <p>{message.deletedAt ? <em>Mensagem apagada</em> : message.content}</p>
+                )}
+                {message.deliveryState === 'failed' && (
+                  <div className="message-failure" role="status">
+                    Não foi possível enviar.
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void props.onSend(
+                          messageTarget(),
+                          message.content ?? '',
+                          message.clientMessageId,
+                        )
+                      }
+                    >
+                      Tentar novamente
+                    </button>
+                  </div>
+                )}
+              </div>
+              {deleteConfirmationId === message.id && (
+                <div
+                  className="message-delete-confirm"
+                  role="alertdialog"
+                  aria-label="Excluir mensagem"
+                >
+                  <span>Excluir esta mensagem? Esta ação não pode ser desfeita.</span>
+                  <div>
+                    <button
+                      type="button"
+                      className="button ghost"
+                      onClick={() => setDeleteConfirmationId(null)}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      className="button danger-outline"
+                      type="button"
+                      onClick={() => void remove(message)}
+                    >
+                      Excluir
+                    </button>
+                  </div>
                 </div>
               )}
-            </div>
-            {message.senderId === props.currentUserId && message.id > 0 && !message.deletedAt && (
-              <div className="message-actions">
-                <button type="button" onClick={() => void edit(message)}>
-                  Editar
-                </button>
-                <button type="button" onClick={() => void remove(message)}>
-                  Apagar
-                </button>
-              </div>
-            )}
-          </article>
-        ))}
+              {message.senderId === props.currentUserId &&
+                message.id > 0 &&
+                !message.deletedAt &&
+                editingMessageId !== message.id &&
+                deleteConfirmationId !== message.id && (
+                  <MessageActions
+                    mobileMenuOpen={mobileMenuMessageId === message.id}
+                    onEdit={() => startEdit(message)}
+                    onDelete={() => {
+                      setDeleteConfirmationId(message.id);
+                      setMobileMenuMessageId(null);
+                    }}
+                    onMobileMenuToggle={() =>
+                      setMobileMenuMessageId((current) =>
+                        current === message.id ? null : message.id,
+                      )
+                    }
+                  />
+                )}
+            </article>
+          );
+        })}
         <div ref={endRef} />
       </div>
       {newMessageAvailable && (

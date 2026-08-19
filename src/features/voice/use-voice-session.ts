@@ -59,6 +59,7 @@ export function useVoiceSession({
       target: string,
       recovering?: boolean,
       existingMicrophone?: MediaStreamTrack,
+      targetRoomId?: string,
     ) => Promise<boolean>
   >(() => Promise.resolve(false));
   const selectedMicrophoneRef = useRef(mediaDevicePreferences.microphone());
@@ -77,6 +78,7 @@ export function useVoiceSession({
   const cameraWantedRef = useRef(false);
   const screenWantedRef = useRef(false);
   const userRequestedDisconnectRef = useRef(false);
+  const joinInFlightRef = useRef(false);
   const recoveryOperationRef = useRef<Promise<boolean> | null>(null);
   const pendingPublicationClosuresRef = useRef(new Map<string, MediaEndReason>());
   const sessionGenerationRef = useRef(0);
@@ -164,12 +166,13 @@ export function useVoiceSession({
       targetConnectionId: string,
       recovering = false,
       existingMicrophone?: MediaStreamTrack,
+      targetRoomId = roomId,
     ): Promise<boolean> => {
       const generation = sessionGenerationRef.current;
       setStatus(recovering ? 'recovering' : 'joining');
       setError('');
       const client = new MediaSessionManager(
-        roomId,
+        targetRoomId,
         targetConnectionId,
         (media: RemoteMediaTrack) => {
           setRemoteMedia((current) => [
@@ -233,18 +236,23 @@ export function useVoiceSession({
   }, [startClient]);
 
   const join = useCallback(
-    async (takeover = false) => {
-      if (!connectionId || status !== 'idle') return;
+    async (takeover = false, targetRoomId = roomId) => {
+      if (!connectionId || status !== 'idle' || joinInFlightRef.current) return;
+      joinInFlightRef.current = true;
       userRequestedDisconnectRef.current = false;
       sessionGenerationRef.current += 1;
       setStatus('joining');
       setError('');
       setCallConflict(false);
       try {
-        await joinCall(roomId, takeover);
-        const started = await startClient(connectionId);
-        if (!started) await leaveCall().catch(() => undefined);
+        await joinCall(targetRoomId, takeover);
+        const started = await startClient(connectionId, false, undefined, targetRoomId);
+        if (!started) {
+          joinInFlightRef.current = false;
+          await leaveCall().catch(() => undefined);
+        }
       } catch (caught) {
+        joinInFlightRef.current = false;
         setStatus('idle');
         setCallConflict(caught instanceof CallConflictError);
         setError(caught instanceof Error ? caught.message : 'Não foi possível entrar na chamada.');
@@ -255,6 +263,7 @@ export function useVoiceSession({
 
   const leave = useCallback(async () => {
     userRequestedDisconnectRef.current = true;
+    joinInFlightRef.current = false;
     sessionGenerationRef.current += 1;
     recoveryOperationRef.current = null;
     statsCollectorRef.current?.stop();

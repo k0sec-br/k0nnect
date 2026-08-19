@@ -3,15 +3,20 @@ import { useEffect, useState } from 'react';
 import type { FriendView, SocialUserView } from '../../shared/types/api';
 import { AppShell } from '../components/app-shell';
 import { FormMessage } from '../components/form-message';
-import { MicIcon } from '../components/icons';
+import { IconButton } from '../components/icon-button';
+import { CloseIcon } from '../components/icons';
 import { MediaRoomView } from '../components/media-room-view';
 import { RemoteAudio } from '../components/remote-audio';
 import { useAuth } from '../features/auth/auth-context';
 import { useCall } from '../features/call/call-context';
+import { callStatusLabel, shouldShowCallPanel } from '../features/call/call-panel-state';
 import { ChatView } from '../features/social/chat-view';
 import { CreateGroupDialog } from '../features/social/create-group-dialog';
 import { SocialHome } from '../features/social/social-home';
 import { navigate } from '../lib/navigation';
+
+type NavigationContext = 'group' | 'home';
+type HomeContent = 'dm' | 'friends';
 
 export function AppPage() {
   const { logout, updateSocialState, user } = useAuth();
@@ -19,9 +24,11 @@ export function AppPage() {
   const { config, connectionState, members, room, socket, voice } = call;
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [homeActive, setHomeActive] = useState(true);
+  const [navigationContext, setNavigationContext] = useState<NavigationContext>('home');
+  const [homeContent, setHomeContent] = useState<HomeContent>('friends');
   const [directRecipient, setDirectRecipient] = useState<SocialUserView | null>(null);
   const [creatingGroup, setCreatingGroup] = useState(false);
+  const [callPanelDismissed, setCallPanelDismissed] = useState(false);
 
   useEffect(() => {
     if (!directRecipient) return;
@@ -32,15 +39,20 @@ export function AppPage() {
     if (conversation) {
       call.selectConversation(conversation.id);
       setDirectRecipient(null);
-      setHomeActive(false);
+      setHomeContent('dm');
     }
   }, [call, directRecipient]);
 
+  useEffect(() => {
+    if (voice.status === 'idle') setCallPanelDismissed(false);
+  }, [voice.status]);
+
   if (!user) return null;
 
+  const homeActive = navigationContext === 'home';
   const selectedMembers = directRecipient
     ? members.filter((member) => member.id === user.id || member.id === directRecipient.id)
-    : homeActive
+    : homeActive && homeContent === 'friends'
       ? members.filter((member) => call.friends.some((friend) => friend.id === member.id))
       : members.filter((member) =>
           (call.selectedConversation?.members ?? []).some(
@@ -84,12 +96,30 @@ export function AppPage() {
   const videoMedia = [...voice.localMedia, ...voice.remoteMedia].some(
     (media) => media.publication.kind === 'video',
   );
+  const showCallPanel = shouldShowCallPanel(voice.status, callPanelDismissed);
 
-  function selectConversation(conversationId: string) {
+  function selectHomeConversation(conversationId: string) {
     call.selectConversation(conversationId);
     setDirectRecipient(null);
-    setHomeActive(false);
+    setNavigationContext('home');
+    setHomeContent('dm');
     setChannelsOpen(false);
+  }
+
+  function selectGroupConversation(conversationId: string) {
+    call.selectConversation(conversationId);
+    setDirectRecipient(null);
+    setNavigationContext('group');
+    setChannelsOpen(false);
+  }
+
+  function activateVoiceChannel() {
+    if (voice.status !== 'idle') {
+      setCallPanelDismissed(false);
+      return;
+    }
+    if (!call.selectedConversation?.callRoomId) return;
+    call.joinConversationCall(call.selectedConversation.id);
   }
 
   return (
@@ -103,19 +133,24 @@ export function AppPage() {
       connectionState={connectionState}
       conversations={call.conversations}
       selectedConversation={call.selectedConversation}
-      homeActive={homeActive}
+      navigationContext={navigationContext}
       voice={shellVoice}
+      showCallPanel={showCallPanel}
       channelsOpen={channelsOpen}
       membersOpen={membersOpen}
       onChannelsOpenChange={setChannelsOpen}
       onMembersOpenChange={setMembersOpen}
       onHomeSelect={() => {
-        setHomeActive(true);
+        setNavigationContext('home');
+        setHomeContent('friends');
         setDirectRecipient(null);
         setChannelsOpen(false);
       }}
-      onConversationSelect={selectConversation}
+      onHomeConversationSelect={selectHomeConversation}
+      onGroupConversationSelect={selectGroupConversation}
       onCreateGroup={() => setCreatingGroup(true)}
+      onVoiceChannelActivate={activateVoiceChannel}
+      onDismissCallPanel={() => setCallPanelDismissed(true)}
       onLogout={() => void logout().then(() => navigate('/login'))}
     >
       <div className="social-app-main">
@@ -131,7 +166,7 @@ export function AppPage() {
             Transferir chamada para este dispositivo
           </button>
         )}
-        {homeActive && !directRecipient ? (
+        {homeActive && homeContent === 'friends' && !directRecipient ? (
           <SocialHome
             friends={call.friends}
             requests={call.friendRequests}
@@ -142,10 +177,11 @@ export function AppPage() {
                 (item) =>
                   item.kind === 'dm' && item.members.some((member) => member.id === friend.id),
               );
-              if (conversation) selectConversation(conversation.id);
+              if (conversation) selectHomeConversation(conversation.id);
               else {
                 setDirectRecipient(friend);
-                setHomeActive(true);
+                setNavigationContext('home');
+                setHomeContent('dm');
               }
             }}
           />
@@ -154,6 +190,7 @@ export function AppPage() {
             conversation={directRecipient ? null : call.selectedConversation}
             recipient={directRecipient}
             currentUserId={user.id}
+            currentUsername={user.username}
             getMessages={socket.getChatMessages}
             isHistoryLoaded={socket.isHistoryLoaded}
             subscribeChat={socket.subscribeChat}
@@ -172,12 +209,13 @@ export function AppPage() {
             onSend={socket.sendChat}
             onUseGroupCall={() => {
               if (call.selectedConversation?.callRoomId) {
-                call.selectCallConversation(call.selectedConversation.id);
+                activateVoiceChannel();
               }
             }}
             onSocialChanged={updateSocialState}
             onGroupLeft={() => {
-              setHomeActive(true);
+              setNavigationContext('home');
+              setHomeContent('friends');
               setDirectRecipient(null);
             }}
           />
@@ -193,20 +231,18 @@ export function AppPage() {
             />
           </aside>
         )}
-        {voice.status === 'idle' && room && (
+        {showCallPanel && room && (
           <div className="global-call-bar">
             <div>
               <strong>{call.callConversation?.name ?? room.name}</strong>
-              <span>Chamada de voz</span>
+              <span>{callStatusLabel(voice.status)}</span>
             </div>
-            <button
-              className="button primary"
-              type="button"
-              onClick={() => void voice.join()}
-              disabled={!socket.connectionId || !config?.realtimeEnabled}
+            <IconButton
+              label="Ocultar painel da chamada"
+              onClick={() => setCallPanelDismissed(true)}
             >
-              <MicIcon aria-hidden="true" /> Entrar
-            </button>
+              <CloseIcon aria-hidden="true" />
+            </IconButton>
           </div>
         )}
         <div hidden aria-hidden="true">
@@ -229,7 +265,7 @@ export function AppPage() {
             updateSocialState(social);
             call.selectConversation(conversationId);
             call.selectCallConversation(conversationId);
-            setHomeActive(false);
+            setNavigationContext('group');
             setCreatingGroup(false);
           }}
         />

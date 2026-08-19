@@ -69,16 +69,20 @@ interface AppShellProps {
   connectionState: string;
   conversations: ConversationSummary[];
   selectedConversation: ConversationSummary | null;
-  homeActive: boolean;
+  navigationContext: 'group' | 'home';
   voice: VoiceControls;
+  showCallPanel: boolean;
   channelsOpen: boolean;
   membersOpen: boolean;
   onChannelsOpenChange(open: boolean): void;
   onMembersOpenChange(open: boolean): void;
   onLogout(): void;
   onHomeSelect(): void;
-  onConversationSelect(conversationId: string): void;
+  onHomeConversationSelect(conversationId: string): void;
+  onGroupConversationSelect(conversationId: string): void;
   onCreateGroup(): void;
+  onVoiceChannelActivate(): void;
+  onDismissCallPanel(): void;
 }
 
 function ParticipantLine({
@@ -254,9 +258,10 @@ function ChannelSidebar({
   onLogout,
   conversations,
   selectedConversation,
-  homeActive,
+  navigationContext,
   onHomeSelect,
-  onConversationSelect,
+  onHomeConversationSelect,
+  onVoiceChannelActivate,
 }: Pick<
   AppShellProps,
   | 'roomName'
@@ -267,9 +272,10 @@ function ChannelSidebar({
   | 'onLogout'
   | 'conversations'
   | 'selectedConversation'
-  | 'homeActive'
+  | 'navigationContext'
   | 'onHomeSelect'
-  | 'onConversationSelect'
+  | 'onHomeConversationSelect'
+  | 'onVoiceChannelActivate'
 > & {
   open: boolean;
   onClose(): void;
@@ -277,13 +283,15 @@ function ChannelSidebar({
   return (
     <aside className={`channel-sidebar ${open ? 'is-open' : ''}`} aria-label="Canais">
       <header className="group-header">
-        <span>{homeActive ? 'Início' : (selectedConversation?.name ?? 'k0nnect')}</span>
+        <span>
+          {navigationContext === 'home' ? 'Início' : (selectedConversation?.name ?? 'k0nnect')}
+        </span>
         <IconButton label="Fechar canais" className="drawer-close" onClick={onClose}>
           <CloseIcon aria-hidden="true" />
         </IconButton>
       </header>
       <nav className="channel-navigation" aria-label="Navegação social">
-        {homeActive ? (
+        {navigationContext === 'home' ? (
           <>
             <div className="channel-category">
               <span>Social</span>
@@ -302,17 +310,22 @@ function ChannelSidebar({
                   className={`voice-channel ${selectedConversation?.id === conversation.id ? 'is-active' : ''}`}
                   type="button"
                   key={conversation.id}
-                  onClick={() => onConversationSelect(conversation.id)}
+                  aria-current={selectedConversation?.id === conversation.id ? 'page' : undefined}
+                  onClick={() => onHomeConversationSelect(conversation.id)}
                 >
                   <Avatar displayName={conversation.name} size="small" />
-                  <span>{conversation.name}</span>
+                  <span>
+                    @
+                    {conversation.members.find((member) => member.id !== user.id)?.username ??
+                      conversation.name}
+                  </span>
                 </button>
               ))}
           </>
         ) : (
           <>
             <div className="channel-category">
-              <span>Texto</span>
+              <span>Chat</span>
             </div>
             <button className="voice-channel is-active" type="button">
               <span aria-hidden="true">#</span>
@@ -321,12 +334,22 @@ function ChannelSidebar({
             {selectedConversation?.callRoomId && (
               <>
                 <div className="channel-category">
-                  <span>Voz</span>
+                  <span>Call</span>
                 </div>
-                <div className="voice-channel">
+                <button
+                  className={`voice-channel voice-channel-call ${voice.status !== 'idle' ? 'is-active' : ''}`}
+                  type="button"
+                  onClick={onVoiceChannelActivate}
+                  disabled={voice.status === 'idle' && !voice.canJoin}
+                >
                   <VolumeIcon aria-hidden="true" />
-                  <span>Geral</span>
-                </div>
+                  <span className="voice-channel-copy">
+                    <span>Geral</span>
+                    {voice.status === 'joining' && <small>Conectando…</small>}
+                    {voice.status === 'reconnecting' && <small>Reconectando…</small>}
+                    {voice.status === 'recovering' && <small>Recuperando…</small>}
+                  </span>
+                </button>
               </>
             )}
           </>
@@ -439,7 +462,7 @@ export function AppShell(props: AppShellProps) {
     <div className="app-shell">
       <aside className="group-rail" aria-label="Grupos">
         <button
-          className={`rail-item rail-home ${props.homeActive ? 'is-active' : ''}`}
+          className={`rail-item rail-home ${props.navigationContext === 'home' ? 'is-active' : ''}`}
           type="button"
           onClick={props.onHomeSelect}
           aria-label="k0nnect"
@@ -451,16 +474,17 @@ export function AppShell(props: AppShellProps) {
           .filter((item) => item.kind === 'group')
           .map((conversation) => (
             <button
-              className={`rail-item ${!props.homeActive && props.selectedConversation?.id === conversation.id ? 'is-active' : ''}`}
+              className={`rail-item ${props.navigationContext === 'group' && props.selectedConversation?.id === conversation.id ? 'is-active' : ''}`}
               type="button"
               key={conversation.id}
               aria-label={conversation.name}
               aria-current={
-                !props.homeActive && props.selectedConversation?.id === conversation.id
+                props.navigationContext === 'group' &&
+                props.selectedConversation?.id === conversation.id
                   ? 'page'
                   : undefined
               }
-              onClick={() => props.onConversationSelect(conversation.id)}
+              onClick={() => props.onGroupConversationSelect(conversation.id)}
             >
               {conversation.isDefault ? (
                 <img src="/brand/k0sec-logo.png" alt="" />
@@ -492,9 +516,10 @@ export function AppShell(props: AppShellProps) {
         onLogout={props.onLogout}
         conversations={props.conversations}
         selectedConversation={props.selectedConversation}
-        homeActive={props.homeActive}
+        navigationContext={props.navigationContext}
         onHomeSelect={props.onHomeSelect}
-        onConversationSelect={props.onConversationSelect}
+        onHomeConversationSelect={props.onHomeConversationSelect}
+        onVoiceChannelActivate={props.onVoiceChannelActivate}
       />
       <main className="app-main">{props.children}</main>
       <MemberSidebar
@@ -517,95 +542,85 @@ export function AppShell(props: AppShellProps) {
           }}
         />
       )}
-      {mobileLayout && (
+      {mobileLayout && props.showCallPanel && (
         <div className="mobile-voice-bar" aria-label="Controles de voz">
-          {props.voice.status === 'idle' ? (
-            <button
-              className="button primary"
-              type="button"
-              disabled={!props.voice.canJoin}
-              onClick={props.voice.join}
+          <>
+            <IconButton
+              label={microphoneControlLabel(props.voice)}
+              className={props.voice.muted ? 'is-active' : ''}
+              aria-pressed={props.voice.muted}
+              onClick={props.voice.toggleMuted}
             >
-              <MicIcon aria-hidden="true" /> Entrar na voz
-            </button>
-          ) : (
-            <>
+              {props.voice.muted ? (
+                <MicOffIcon aria-hidden="true" />
+              ) : (
+                <MicIcon aria-hidden="true" />
+              )}
+            </IconButton>
+            <IconButton
+              label={props.voice.deafened ? 'Ativar áudio' : 'Desativar áudio'}
+              className={props.voice.deafened ? 'is-active' : ''}
+              aria-pressed={props.voice.deafened}
+              onClick={props.voice.toggleDeafened}
+            >
+              {props.voice.deafened ? (
+                <HeadphonesOffIcon aria-hidden="true" />
+              ) : (
+                <HeadphonesIcon aria-hidden="true" />
+              )}
+            </IconButton>
+            {props.voice.supportsCamera && (
               <IconButton
-                label={microphoneControlLabel(props.voice)}
-                className={props.voice.muted ? 'is-active' : ''}
-                aria-pressed={props.voice.muted}
-                onClick={props.voice.toggleMuted}
+                label={props.voice.cameraState === 'active' ? 'Desativar câmera' : 'Ativar câmera'}
+                className={props.voice.cameraState === 'active' ? 'is-active' : ''}
+                aria-pressed={props.voice.cameraState === 'active'}
+                onClick={props.voice.toggleCamera}
+                disabled={!['idle', 'active', 'error'].includes(props.voice.cameraState)}
               >
-                {props.voice.muted ? (
-                  <MicOffIcon aria-hidden="true" />
+                {props.voice.cameraState === 'active' ? (
+                  <CameraOffIcon aria-hidden="true" />
                 ) : (
-                  <MicIcon aria-hidden="true" />
+                  <CameraIcon aria-hidden="true" />
                 )}
               </IconButton>
-              <IconButton
-                label={props.voice.deafened ? 'Ativar áudio' : 'Desativar áudio'}
-                className={props.voice.deafened ? 'is-active' : ''}
-                aria-pressed={props.voice.deafened}
-                onClick={props.voice.toggleDeafened}
-              >
-                {props.voice.deafened ? (
-                  <HeadphonesOffIcon aria-hidden="true" />
-                ) : (
-                  <HeadphonesIcon aria-hidden="true" />
-                )}
-              </IconButton>
-              {props.voice.supportsCamera && (
+            )}
+            {['active', 'switching'].includes(props.voice.cameraState) &&
+              props.voice.cameras.length > 1 && (
                 <IconButton
-                  label={
-                    props.voice.cameraState === 'active' ? 'Desativar câmera' : 'Ativar câmera'
-                  }
-                  className={props.voice.cameraState === 'active' ? 'is-active' : ''}
-                  aria-pressed={props.voice.cameraState === 'active'}
-                  onClick={props.voice.toggleCamera}
-                  disabled={!['idle', 'active', 'error'].includes(props.voice.cameraState)}
+                  label="Trocar câmera"
+                  className="camera-switch-button"
+                  disabled={props.voice.cameraState === 'switching'}
+                  onClick={props.voice.switchCamera}
                 >
-                  {props.voice.cameraState === 'active' ? (
-                    <CameraOffIcon aria-hidden="true" />
-                  ) : (
-                    <CameraIcon aria-hidden="true" />
-                  )}
+                  <SwitchCameraIcon aria-hidden="true" />
                 </IconButton>
               )}
-              {['active', 'switching'].includes(props.voice.cameraState) &&
-                props.voice.cameras.length > 1 && (
-                  <IconButton
-                    label="Trocar câmera"
-                    className="camera-switch-button"
-                    disabled={props.voice.cameraState === 'switching'}
-                    onClick={props.voice.switchCamera}
-                  >
-                    <SwitchCameraIcon aria-hidden="true" />
-                  </IconButton>
+            {props.voice.supportsScreenShare && (
+              <IconButton
+                label={
+                  props.voice.screenState === 'active'
+                    ? 'Parar compartilhamento'
+                    : 'Compartilhar tela'
+                }
+                className={props.voice.screenState === 'active' ? 'is-active' : ''}
+                aria-pressed={props.voice.screenState === 'active'}
+                onClick={props.voice.toggleScreenShare}
+                disabled={!['idle', 'active', 'error'].includes(props.voice.screenState)}
+              >
+                {props.voice.screenState === 'active' ? (
+                  <ScreenShareOffIcon aria-hidden="true" />
+                ) : (
+                  <ScreenShareIcon aria-hidden="true" />
                 )}
-              {props.voice.supportsScreenShare && (
-                <IconButton
-                  label={
-                    props.voice.screenState === 'active'
-                      ? 'Parar compartilhamento'
-                      : 'Compartilhar tela'
-                  }
-                  className={props.voice.screenState === 'active' ? 'is-active' : ''}
-                  aria-pressed={props.voice.screenState === 'active'}
-                  onClick={props.voice.toggleScreenShare}
-                  disabled={!['idle', 'active', 'error'].includes(props.voice.screenState)}
-                >
-                  {props.voice.screenState === 'active' ? (
-                    <ScreenShareOffIcon aria-hidden="true" />
-                  ) : (
-                    <ScreenShareIcon aria-hidden="true" />
-                  )}
-                </IconButton>
-              )}
-              <IconButton label="Desconectar" tone="danger" onClick={props.voice.leave}>
-                <ExitIcon aria-hidden="true" />
               </IconButton>
-            </>
-          )}
+            )}
+            <IconButton label="Desconectar" tone="danger" onClick={props.voice.leave}>
+              <ExitIcon aria-hidden="true" />
+            </IconButton>
+          </>
+          <IconButton label="Ocultar controles da chamada" onClick={props.onDismissCallPanel}>
+            <CloseIcon aria-hidden="true" />
+          </IconButton>
           <IconButton
             label={props.membersOpen ? 'Ocultar participantes' : 'Mostrar participantes'}
             aria-expanded={props.membersOpen}
