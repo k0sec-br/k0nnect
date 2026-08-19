@@ -1,56 +1,58 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import type { FriendView, SocialUserView } from '../../shared/types/api';
 import { AppShell } from '../components/app-shell';
-import { AudioOnlyView } from '../components/audio-only-view';
 import { FormMessage } from '../components/form-message';
-import { IconButton } from '../components/icon-button';
+import { MicIcon } from '../components/icons';
 import { MediaRoomView } from '../components/media-room-view';
-import { MediaDebugPanel } from '../components/media-debug-panel';
-import { MenuIcon, MicIcon, UsersIcon, VolumeIcon } from '../components/icons';
 import { RemoteAudio } from '../components/remote-audio';
 import { useAuth } from '../features/auth/auth-context';
 import { useCall } from '../features/call/call-context';
-import { useMediaQuery } from '../hooks/use-media-query';
+import { ChatView } from '../features/social/chat-view';
+import { CreateGroupDialog } from '../features/social/create-group-dialog';
+import { SocialHome } from '../features/social/social-home';
 import { navigate } from '../lib/navigation';
 
-function connectionStatusLabel(state: ReturnType<typeof useCall>['connectionState']): string {
-  if (state === 'connected') return 'Conectado';
-  if (state === 'idle' || state === 'disconnected') return 'Sala conectada';
-  if (state === 'connecting') return 'Conectando…';
-  if (state === 'degraded') return 'Conexão instável';
-  if (state === 'suspended') return 'Aguardando rede…';
-  if (state === 'disconnecting') return 'Desconectando…';
-  if (state === 'failed') return 'Não foi possível restabelecer a chamada';
-  return 'Reconectando…';
-}
-
 export function AppPage() {
-  const { logout, user } = useAuth();
-  const { config, connectionState, loadError, members, room, socket, voice } = useCall();
+  const { logout, updateSocialState, user } = useAuth();
+  const call = useCall();
+  const { config, connectionState, members, room, socket, voice } = call;
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
-  const membersAreOptional = useMediaQuery('(max-width: 1199px)');
-  const mobileLayout = useMediaQuery('(max-width: 767px)');
+  const [homeActive, setHomeActive] = useState(true);
+  const [directRecipient, setDirectRecipient] = useState<SocialUserView | null>(null);
+  const [creatingGroup, setCreatingGroup] = useState(false);
+
+  useEffect(() => {
+    if (!directRecipient) return;
+    const conversation = call.conversations.find(
+      (item) =>
+        item.kind === 'dm' && item.members.some((member) => member.id === directRecipient.id),
+    );
+    if (conversation) {
+      call.selectConversation(conversation.id);
+      setDirectRecipient(null);
+      setHomeActive(false);
+    }
+  }, [call, directRecipient]);
 
   if (!user) return null;
-  if (!room) {
-    return (
-      <main className="center-state">
-        {loadError ? (
-          <FormMessage message={loadError} />
-        ) : (
-          <span className="spinner large" aria-label="Carregando sala" />
-        )}
-      </main>
-    );
-  }
 
+  const selectedMembers = directRecipient
+    ? members.filter((member) => member.id === user.id || member.id === directRecipient.id)
+    : homeActive
+      ? members.filter((member) => call.friends.some((friend) => friend.id === member.id))
+      : members.filter((member) =>
+          (call.selectedConversation?.members ?? []).some(
+            (conversationMember) => conversationMember.id === member.id,
+          ),
+        );
   const shellVoice = {
     status: voice.status,
     muted: voice.muted,
     userMuted: voice.userMuted,
     deafened: voice.deafened,
-    canJoin: Boolean(socket.connectionId && config?.realtimeEnabled),
+    canJoin: Boolean(socket.connectionId && config?.realtimeEnabled && room),
     selectedMicrophone: voice.selectedMicrophone,
     microphones: voice.microphones,
     cameraState: voice.cameraState,
@@ -69,107 +71,142 @@ export function AppPage() {
     toggleScreenShare: () =>
       void (voice.screenState === 'active' ? voice.stopScreenShare() : voice.startScreenShare()),
   };
+  const canSendToSelectedConversation =
+    call.selectedConversation?.kind === 'group'
+      ? true
+      : (call.selectedConversation?.members.some(
+          (member) =>
+            member.id !== user.id && call.friends.some((friend) => friend.id === member.id),
+        ) ?? false);
+  const canSendMessage = directRecipient
+    ? call.friends.some((friend) => friend.id === directRecipient.id)
+    : canSendToSelectedConversation;
+  const videoMedia = [...voice.localMedia, ...voice.remoteMedia].some(
+    (media) => media.publication.kind === 'video',
+  );
+
+  function selectConversation(conversationId: string) {
+    call.selectConversation(conversationId);
+    setDirectRecipient(null);
+    setHomeActive(false);
+    setChannelsOpen(false);
+  }
 
   return (
     <AppShell
       user={user}
-      roomName={room.name}
+      roomName={call.callConversation?.name ?? room?.name ?? 'Chamada'}
       participants={socket.participants}
-      members={members}
+      members={selectedMembers}
       onlineUserIds={socket.onlineUserIds}
       publications={socket.publications}
       connectionState={connectionState}
+      conversations={call.conversations}
+      selectedConversation={call.selectedConversation}
+      homeActive={homeActive}
       voice={shellVoice}
       channelsOpen={channelsOpen}
       membersOpen={membersOpen}
       onChannelsOpenChange={setChannelsOpen}
       onMembersOpenChange={setMembersOpen}
+      onHomeSelect={() => {
+        setHomeActive(true);
+        setDirectRecipient(null);
+        setChannelsOpen(false);
+      }}
+      onConversationSelect={selectConversation}
+      onCreateGroup={() => setCreatingGroup(true)}
       onLogout={() => void logout().then(() => navigate('/login'))}
     >
-      <div className="voice-room">
-        <header className="main-header">
-          {mobileLayout && (
-            <IconButton
-              label="Mostrar canais"
-              className="mobile-menu-button"
-              aria-expanded={channelsOpen}
-              onClick={() => setChannelsOpen(!channelsOpen)}
-            >
-              <MenuIcon aria-hidden="true" />
-            </IconButton>
-          )}
-          <div className="main-header-title">
-            <VolumeIcon aria-hidden="true" />
-            <h1>{room.name}</h1>
-          </div>
-          <span className={`connection-status connection-${connectionState}`} role="status">
-            <i aria-hidden="true" />
-            {connectionStatusLabel(connectionState)}
-          </span>
-          {membersAreOptional && (
-            <IconButton
-              label={membersOpen ? 'Ocultar participantes' : 'Mostrar participantes'}
-              className="members-toggle"
-              aria-expanded={membersOpen}
-              onClick={() => setMembersOpen(!membersOpen)}
-            >
-              <UsersIcon aria-hidden="true" />
-            </IconButton>
-          )}
-        </header>
+      <div className="social-app-main">
+        {(socket.message || voice.error || call.loadError) && (
+          <FormMessage message={voice.error || socket.message || call.loadError} />
+        )}
+        {voice.callConflict && (
+          <button
+            className="button secondary call-conflict-action"
+            type="button"
+            onClick={voice.takeoverCall}
+          >
+            Transferir chamada para este dispositivo
+          </button>
+        )}
+        {homeActive && !directRecipient ? (
+          <SocialHome
+            friends={call.friends}
+            requests={call.friendRequests}
+            onlineUserIds={socket.onlineUserIds}
+            onChanged={updateSocialState}
+            onMessage={(friend: FriendView) => {
+              const conversation = call.conversations.find(
+                (item) =>
+                  item.kind === 'dm' && item.members.some((member) => member.id === friend.id),
+              );
+              if (conversation) selectConversation(conversation.id);
+              else {
+                setDirectRecipient(friend);
+                setHomeActive(true);
+              }
+            }}
+          />
+        ) : (
+          <ChatView
+            conversation={directRecipient ? null : call.selectedConversation}
+            recipient={directRecipient}
+            currentUserId={user.id}
+            getMessages={socket.getChatMessages}
+            isHistoryLoaded={socket.isHistoryLoaded}
+            subscribeChat={socket.subscribeChat}
+            canJoinCall={Boolean(
+              socket.connectionId && config?.realtimeEnabled && voice.status === 'idle',
+            )}
+            canSend={canSendMessage}
+            friends={call.friends}
+            onOpenChannels={() => setChannelsOpen(true)}
+            onOpenMembers={() => setMembersOpen(true)}
+            onMessagesLoaded={(messages) => {
+              if (call.selectedConversation) {
+                socket.setConversationMessages(call.selectedConversation.id, messages);
+              }
+            }}
+            onSend={socket.sendChat}
+            onUseGroupCall={() => {
+              if (call.selectedConversation?.callRoomId) {
+                call.selectCallConversation(call.selectedConversation.id);
+              }
+            }}
+            onSocialChanged={updateSocialState}
+            onGroupLeft={() => {
+              setHomeActive(true);
+              setDirectRecipient(null);
+            }}
+          />
+        )}
 
-        <div className="voice-room-content">
-          {(socket.message || voice.error) && (
-            <FormMessage message={voice.error || socket.message} />
-          )}
-          {voice.callConflict && (
-            <button className="button secondary" type="button" onClick={voice.takeoverCall}>
-              Transferir chamada para este dispositivo
-            </button>
-          )}
-          {!config?.realtimeEnabled && (
-            <div className="inline-notice" role="status">
-              Presença local ativa. Configure o Cloudflare Realtime para habilitar áudio neste
-              ambiente.
-            </div>
-          )}
-          {[...voice.localMedia, ...voice.remoteMedia].some(
-            (media) => media.publication.kind === 'video',
-          ) ? (
+        {voice.status !== 'idle' && videoMedia && (
+          <aside className="global-call-stage" aria-label="Chamada em andamento">
             <MediaRoomView
               participants={socket.participants}
               userId={user.id}
               localMedia={voice.localMedia}
               remoteMedia={voice.remoteMedia}
             />
-          ) : (
-            <AudioOnlyView participants={socket.participants} userId={user.id} />
-          )}
-          {import.meta.env.DEV && (
-            <MediaDebugPanel
-              callState={connectionState}
-              connectionEpoch={socket.connectionIdentity()?.connectionEpoch ?? null}
-              health={voice.debugHealth}
-              lastRecoveryReason={voice.lastRecoveryReason}
-              networkOnline={navigator.onLine}
-              recoveryAttempts={voice.recoveryAttempts}
-              socketState={socket.connectionState}
-              stats={voice.debugStats}
-            />
-          )}
-        </div>
-
-        {voice.status === 'idle' && (
-          <div className="desktop-join-bar">
+          </aside>
+        )}
+        {voice.status === 'idle' && room && (
+          <div className="global-call-bar">
+            <div>
+              <strong>{call.callConversation?.name ?? room.name}</strong>
+              <span>Chamada de voz</span>
+            </div>
             <button
               className="button primary"
               type="button"
               onClick={() => void voice.join()}
               disabled={!socket.connectionId || !config?.realtimeEnabled}
             >
-              <MicIcon aria-hidden="true" /> Entrar na voz
+              <MicIcon aria-hidden="true" /> Entrar
             </button>
-            <p>Ao entrar, seu microfone será solicitado pelo navegador.</p>
           </div>
         )}
         <div hidden aria-hidden="true">
@@ -184,6 +221,19 @@ export function AppPage() {
             ))}
         </div>
       </div>
+      {creatingGroup && (
+        <CreateGroupDialog
+          friends={call.friends}
+          onClose={() => setCreatingGroup(false)}
+          onCreated={(conversationId, social) => {
+            updateSocialState(social);
+            call.selectConversation(conversationId);
+            call.selectCallConversation(conversationId);
+            setHomeActive(false);
+            setCreatingGroup(false);
+          }}
+        />
+      )}
     </AppShell>
   );
 }

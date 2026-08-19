@@ -4,11 +4,17 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 
-import type { BootstrapView, PublicConfig, SessionUser } from '../../../shared/types/api';
+import type {
+  BootstrapView,
+  PublicConfig,
+  SessionUser,
+  SocialStateView,
+} from '../../../shared/types/api';
 import { apiClient } from '../../lib/api-client';
 
 interface AuthContextValue {
@@ -26,6 +32,7 @@ interface AuthContextValue {
   }): Promise<string[]>;
   logout(all?: boolean): Promise<void>;
   refresh(): Promise<void>;
+  updateSocialState(state: SocialStateView): void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -38,31 +45,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     { authenticated: true }
   > | null>(null);
   const [config, setConfig] = useState<PublicConfig | null>(null);
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const result = await apiClient.get<BootstrapView>('/api/bootstrap');
-      setConfig(result.config);
-      if (result.authenticated) {
-        setUser(result.user);
-        setBootstrap(result);
-        apiClient.setCsrfToken(result.csrfToken);
-      } else {
+  const refresh = useCallback((): Promise<void> => {
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+    const pending = (async () => {
+      try {
+        const result = await apiClient.get<BootstrapView>('/api/bootstrap');
+        setConfig(result.config);
+        if (result.authenticated) {
+          setUser(result.user);
+          setBootstrap(result);
+          apiClient.setCsrfToken(result.csrfToken);
+        } else {
+          setUser(null);
+          setBootstrap(null);
+          apiClient.setCsrfToken(null);
+        }
+      } catch {
         setUser(null);
-        setBootstrap(null);
         apiClient.setCsrfToken(null);
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      setUser(null);
-      apiClient.setCsrfToken(null);
-    } finally {
-      setLoading(false);
-    }
+    })();
+    refreshPromiseRef.current = pending;
+    void pending.finally(() => {
+      if (refreshPromiseRef.current === pending) refreshPromiseRef.current = null;
+    });
+    return pending;
   }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const updateSocialState = useCallback((state: SocialStateView) => {
+    setBootstrap((current) => (current ? { ...current, ...state } : current));
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -71,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bootstrap,
       config,
       refresh,
+      updateSocialState,
       async login(username, password, turnstileToken) {
         const result = await apiClient.post<{ user: SessionUser; csrfToken: string }>(
           '/api/auth/login',
@@ -98,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBootstrap(null);
       },
     }),
-    [bootstrap, config, loading, refresh, user],
+    [bootstrap, config, loading, refresh, updateSocialState, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

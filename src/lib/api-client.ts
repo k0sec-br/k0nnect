@@ -41,6 +41,9 @@ class ApiClient {
     let response: Response;
     try {
       incrementDevelopmentMetric('httpRequests');
+      if (path.startsWith('/api/social/')) {
+        incrementDevelopmentMetric(init.method === 'GET' ? 'd1Reads' : 'd1Writes');
+      }
       if (path === '/api/realtime/session' && typeof init.body === 'string') {
         try {
           const action = (JSON.parse(init.body) as { action?: string }).action;

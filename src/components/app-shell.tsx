@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import type { MediaPublication, RoomParticipant } from '../../shared/protocol/room';
-import type { MemberView, SessionUser } from '../../shared/types/api';
+import type { ConversationSummary, MemberView, SessionUser } from '../../shared/types/api';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { handleInternalLink } from '../lib/navigation';
 import { Avatar, participantState } from './avatar';
@@ -67,12 +67,18 @@ interface AppShellProps {
   onlineUserIds: string[];
   publications: MediaPublication[];
   connectionState: string;
+  conversations: ConversationSummary[];
+  selectedConversation: ConversationSummary | null;
+  homeActive: boolean;
   voice: VoiceControls;
   channelsOpen: boolean;
   membersOpen: boolean;
   onChannelsOpenChange(open: boolean): void;
   onMembersOpenChange(open: boolean): void;
   onLogout(): void;
+  onHomeSelect(): void;
+  onConversationSelect(conversationId: string): void;
+  onCreateGroup(): void;
 }
 
 function ParticipantLine({
@@ -246,9 +252,24 @@ function ChannelSidebar({
   open,
   onClose,
   onLogout,
+  conversations,
+  selectedConversation,
+  homeActive,
+  onHomeSelect,
+  onConversationSelect,
 }: Pick<
   AppShellProps,
-  'roomName' | 'participants' | 'publications' | 'user' | 'voice' | 'onLogout'
+  | 'roomName'
+  | 'participants'
+  | 'publications'
+  | 'user'
+  | 'voice'
+  | 'onLogout'
+  | 'conversations'
+  | 'selectedConversation'
+  | 'homeActive'
+  | 'onHomeSelect'
+  | 'onConversationSelect'
 > & {
   open: boolean;
   onClose(): void;
@@ -256,24 +277,60 @@ function ChannelSidebar({
   return (
     <aside className={`channel-sidebar ${open ? 'is-open' : ''}`} aria-label="Canais">
       <header className="group-header">
-        <span>K0Sec</span>
+        <span>{homeActive ? 'Início' : (selectedConversation?.name ?? 'k0nnect')}</span>
         <IconButton label="Fechar canais" className="drawer-close" onClick={onClose}>
           <CloseIcon aria-hidden="true" />
         </IconButton>
       </header>
-      <nav className="channel-navigation" aria-label="Canais de K0Sec">
-        <div className="channel-category">
-          <span>Voz</span>
-        </div>
-        <a
-          className="voice-channel is-active"
-          href="/app"
-          onClick={handleInternalLink}
-          aria-current="page"
-        >
-          <VolumeIcon aria-hidden="true" />
-          <span>{roomName}</span>
-        </a>
+      <nav className="channel-navigation" aria-label="Navegação social">
+        {homeActive ? (
+          <>
+            <div className="channel-category">
+              <span>Social</span>
+            </div>
+            <button className="voice-channel is-active" type="button" onClick={onHomeSelect}>
+              <UsersIcon aria-hidden="true" />
+              <span>Amigos</span>
+            </button>
+            <div className="channel-category">
+              <span>Mensagens diretas</span>
+            </div>
+            {conversations
+              .filter((item) => item.kind === 'dm')
+              .map((conversation) => (
+                <button
+                  className={`voice-channel ${selectedConversation?.id === conversation.id ? 'is-active' : ''}`}
+                  type="button"
+                  key={conversation.id}
+                  onClick={() => onConversationSelect(conversation.id)}
+                >
+                  <Avatar displayName={conversation.name} size="small" />
+                  <span>{conversation.name}</span>
+                </button>
+              ))}
+          </>
+        ) : (
+          <>
+            <div className="channel-category">
+              <span>Texto</span>
+            </div>
+            <button className="voice-channel is-active" type="button">
+              <span aria-hidden="true">#</span>
+              <span>chat</span>
+            </button>
+            {selectedConversation?.callRoomId && (
+              <>
+                <div className="channel-category">
+                  <span>Voz</span>
+                </div>
+                <div className="voice-channel">
+                  <VolumeIcon aria-hidden="true" />
+                  <span>Geral</span>
+                </div>
+              </>
+            )}
+          </>
+        )}
         <div className="channel-members">
           {participants.map((participant) => (
             <ParticipantLine
@@ -381,26 +438,46 @@ export function AppShell(props: AppShellProps) {
   return (
     <div className="app-shell">
       <aside className="group-rail" aria-label="Grupos">
-        <a
-          className="rail-item rail-home"
-          href="/app"
-          onClick={handleInternalLink}
+        <button
+          className={`rail-item rail-home ${props.homeActive ? 'is-active' : ''}`}
+          type="button"
+          onClick={props.onHomeSelect}
           aria-label="k0nnect"
         >
           <Brand compact />
-        </a>
+        </button>
         <span className="rail-separator" />
-        <a
-          className="rail-item is-active"
-          href="/app"
-          onClick={handleInternalLink}
-          aria-label="K0Sec"
-          aria-current="page"
+        {props.conversations
+          .filter((item) => item.kind === 'group')
+          .map((conversation) => (
+            <button
+              className={`rail-item ${!props.homeActive && props.selectedConversation?.id === conversation.id ? 'is-active' : ''}`}
+              type="button"
+              key={conversation.id}
+              aria-label={conversation.name}
+              aria-current={
+                !props.homeActive && props.selectedConversation?.id === conversation.id
+                  ? 'page'
+                  : undefined
+              }
+              onClick={() => props.onConversationSelect(conversation.id)}
+            >
+              {conversation.isDefault ? (
+                <img src="/brand/k0sec-logo.png" alt="" />
+              ) : (
+                <span className="rail-group-initial" aria-hidden="true">
+                  {conversation.name.charAt(0).toUpperCase()}
+                </span>
+              )}
+            </button>
+          ))}
+        <span className="rail-separator" />
+        <button
+          className="rail-item"
+          type="button"
+          onClick={props.onCreateGroup}
+          aria-label="Criar grupo"
         >
-          <img src="/brand/k0sec-logo.png" alt="" />
-        </a>
-        <span className="rail-separator" />
-        <button className="rail-item" type="button" disabled aria-label="Criar grupo indisponível">
           <PlusIcon aria-hidden="true" />
         </button>
       </aside>
@@ -413,6 +490,11 @@ export function AppShell(props: AppShellProps) {
         open={props.channelsOpen}
         onClose={() => props.onChannelsOpenChange(false)}
         onLogout={props.onLogout}
+        conversations={props.conversations}
+        selectedConversation={props.selectedConversation}
+        homeActive={props.homeActive}
+        onHomeSelect={props.onHomeSelect}
+        onConversationSelect={props.onConversationSelect}
       />
       <main className="app-main">{props.children}</main>
       <MemberSidebar

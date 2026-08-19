@@ -4,6 +4,9 @@ export interface DevelopmentMetrics {
   wsMessagesReceived: number;
   wsMessagesSent: number;
   wsReconnects: number;
+  d1Reads: number;
+  d1Writes: number;
+  internalNotifications: number;
 }
 
 const metrics: DevelopmentMetrics = {
@@ -12,6 +15,9 @@ const metrics: DevelopmentMetrics = {
   wsMessagesReceived: 0,
   wsMessagesSent: 0,
   wsReconnects: 0,
+  d1Reads: 0,
+  d1Writes: 0,
+  internalNotifications: 0,
 };
 
 export function incrementDevelopmentMetric(metric: keyof DevelopmentMetrics, amount = 1): void {

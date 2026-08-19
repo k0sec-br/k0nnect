@@ -7,7 +7,7 @@ import {
   type ClientRoomMessage,
   type MediaPublication,
 } from '../../../shared/protocol/room';
-import type { MemberView } from '../../../shared/types/api';
+import type { ChatMessageView, MemberView, SocialStateView } from '../../../shared/types/api';
 import { incrementDevelopmentMetric } from '../../lib/development-metrics';
 
 export type RealtimeConnectionState =
@@ -26,6 +26,7 @@ interface PendingCommand {
 
 const SOCKET_READY_TIMEOUT_MS = 10_000;
 const COMMAND_TIMEOUT_MS = 8_000;
+const EMPTY_CHAT_MESSAGES: ChatMessageView[] = [];
 
 export class CallConflictError extends Error {
   override name = 'CallConflictError';
@@ -42,6 +43,7 @@ export function useServerRealtime(
     type: 'member.added' | 'member.updated' | 'member.removed',
     member: MemberView,
   ) => void,
+  onSocialChange: (state: SocialStateView) => void,
 ) {
   const activeRef = useRef(false);
   const connectRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
@@ -56,6 +58,38 @@ export function useServerRealtime(
   const [connectionState, setConnectionState] = useState<RealtimeConnectionState>('offline');
   const [message, setMessage] = useState('');
   const [callReplacementCount, setCallReplacementCount] = useState(0);
+  const chatMessagesRef = useRef<Record<string, ChatMessageView[]>>({});
+  const historyLoadedConversationIdsRef = useRef(new Set<string>());
+  const chatListenersRef = useRef(new Map<string, Set<() => void>>());
+  const chatRecencyRef = useRef<string[]>([]);
+
+  const updateChat = useCallback(
+    (conversationId: string, update: (messages: ChatMessageView[]) => ChatMessageView[]) => {
+      chatRecencyRef.current = [
+        conversationId,
+        ...chatRecencyRef.current.filter((id) => id !== conversationId),
+      ].slice(0, 5);
+      const retainedIds = new Set(chatRecencyRef.current);
+      const previous = chatMessagesRef.current;
+      const next = {
+        ...previous,
+        [conversationId]: update(previous[conversationId] ?? EMPTY_CHAT_MESSAGES).slice(-100),
+      };
+      const changedIds = new Set([conversationId]);
+      for (const cachedId of Object.keys(next)) {
+        if (!retainedIds.has(cachedId)) {
+          delete next[cachedId];
+          historyLoadedConversationIdsRef.current.delete(cachedId);
+          changedIds.add(cachedId);
+        }
+      }
+      chatMessagesRef.current = next;
+      for (const changedId of changedIds) {
+        for (const listener of chatListenersRef.current.get(changedId) ?? []) listener();
+      }
+    },
+    [],
+  );
 
   const settleCommand = useCallback((requestId: string, error?: Error) => {
     const pending = pendingCommandsRef.current.get(requestId);
@@ -70,6 +104,8 @@ export function useServerRealtime(
     if (!serverId || !userId) return;
     activeRef.current = true;
     const pendingCommands = pendingCommandsRef.current;
+    const historyLoadedConversationIds = historyLoadedConversationIdsRef.current;
+    const chatListeners = chatListenersRef.current;
 
     const connect = async (): Promise<boolean> => {
       if (!activeRef.current) return false;
@@ -254,6 +290,50 @@ export function useServerRealtime(
             );
             return;
           }
+          if (realtimeMessage.type === 'chat.message') {
+            updateChat(realtimeMessage.payload.conversationId, (current) => [
+              ...current.filter(
+                (message) =>
+                  message.clientMessageId !== realtimeMessage.payload.clientMessageId &&
+                  message.id !== realtimeMessage.payload.id,
+              ),
+              { ...realtimeMessage.payload, deliveryState: 'sent' },
+            ]);
+            return;
+          }
+          if (realtimeMessage.type === 'chat.updated') {
+            updateChat(realtimeMessage.payload.conversationId, (current) =>
+              current.map((message) =>
+                message.id === realtimeMessage.payload.id
+                  ? {
+                      ...message,
+                      content: realtimeMessage.payload.content,
+                      editedAt: realtimeMessage.payload.editedAt,
+                    }
+                  : message,
+              ),
+            );
+            return;
+          }
+          if (realtimeMessage.type === 'chat.deleted') {
+            updateChat(realtimeMessage.payload.conversationId, (current) =>
+              current.map((message) =>
+                message.id === realtimeMessage.payload.id
+                  ? { ...message, content: null, deletedAt: realtimeMessage.payload.deletedAt }
+                  : message,
+              ),
+            );
+            return;
+          }
+          if (realtimeMessage.type === 'social.changed') {
+            incrementDevelopmentMetric('internalNotifications');
+            onSocialChange({
+              friends: realtimeMessage.payload.friends,
+              friendRequests: realtimeMessage.payload.friendRequests,
+              conversations: realtimeMessage.payload.conversations,
+            });
+            return;
+          }
           if (
             realtimeMessage.type === 'member.added' ||
             realtimeMessage.type === 'member.updated' ||
@@ -265,6 +345,21 @@ export function useServerRealtime(
           if (realtimeMessage.type === 'error') {
             setMessage(realtimeMessage.payload.message);
             if (realtimeMessage.payload.requestId) {
+              for (const [conversationId, messages] of Object.entries(chatMessagesRef.current)) {
+                if (
+                  messages.some(
+                    (item) => item.clientMessageId === realtimeMessage.payload.requestId,
+                  )
+                ) {
+                  updateChat(conversationId, (current) =>
+                    current.map((item) =>
+                      item.clientMessageId === realtimeMessage.payload.requestId
+                        ? { ...item, deliveryState: 'failed' as const }
+                        : item,
+                    ),
+                  );
+                }
+              }
               settleCommand(
                 realtimeMessage.payload.requestId,
                 new Error(realtimeMessage.payload.message),
@@ -306,8 +401,15 @@ export function useServerRealtime(
         pending.reject(new Error('Conexão encerrada.'));
       }
       pendingCommands.clear();
+      const cachedConversationIds = Object.keys(chatMessagesRef.current);
+      chatMessagesRef.current = {};
+      historyLoadedConversationIds.clear();
+      chatRecencyRef.current = [];
+      for (const conversationId of cachedConversationIds) {
+        for (const listener of chatListeners.get(conversationId) ?? []) listener();
+      }
     };
-  }, [onMemberEvent, serverId, settleCommand, userId]);
+  }, [onMemberEvent, onSocialChange, serverId, settleCommand, updateChat, userId]);
 
   const reconcile = useCallback(async () => {
     if (socketRef.current?.readyState === WebSocket.OPEN) return true;
@@ -362,11 +464,86 @@ export function useServerRealtime(
     }
   }, []);
 
+  const sendChat = useCallback(
+    async (
+      target: { conversationId: string } | { recipientUserId: string },
+      content: string,
+      retryClientMessageId?: string,
+    ) => {
+      if (!(await connectRef.current())) throw new Error('Conexão realtime indisponível.');
+      const socket = socketRef.current;
+      if (socket?.readyState !== WebSocket.OPEN) throw new Error('Conexão realtime indisponível.');
+      const clientMessageId = retryClientMessageId ?? crypto.randomUUID();
+      const cacheId =
+        'conversationId' in target ? target.conversationId : `pending_${target.recipientUserId}`;
+      updateChat(cacheId, (current) => [
+        ...current.filter((message) => message.clientMessageId !== clientMessageId),
+        {
+          id: -Date.now(),
+          conversationId: cacheId,
+          senderId: userId!,
+          clientMessageId,
+          content,
+          createdAt: new Date().toISOString(),
+          editedAt: null,
+          deletedAt: null,
+          deliveryState: 'sending',
+        },
+      ]);
+      socket.send(
+        JSON.stringify({
+          v: REALTIME_PROTOCOL_VERSION,
+          type: 'chat.send',
+          payload: { ...target, clientMessageId, content },
+        } satisfies ClientRoomMessage),
+      );
+      incrementDevelopmentMetric('wsMessagesSent');
+      incrementDevelopmentMetric('d1Writes');
+      return clientMessageId;
+    },
+    [updateChat, userId],
+  );
+
+  const getChatMessages = useCallback(
+    (conversationId: string | null) =>
+      conversationId
+        ? (chatMessagesRef.current[conversationId] ?? EMPTY_CHAT_MESSAGES)
+        : EMPTY_CHAT_MESSAGES,
+    [],
+  );
+
+  const subscribeChat = useCallback((conversationId: string | null, listener: () => void) => {
+    if (!conversationId) return () => undefined;
+    const listeners = chatListenersRef.current.get(conversationId) ?? new Set();
+    listeners.add(listener);
+    chatListenersRef.current.set(conversationId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) chatListenersRef.current.delete(conversationId);
+    };
+  }, []);
+
+  const setConversationMessages = useCallback(
+    (conversationId: string, messages: ChatMessageView[]) => {
+      historyLoadedConversationIdsRef.current.add(conversationId);
+      updateChat(conversationId, () => messages);
+    },
+    [updateChat],
+  );
+
+  const isHistoryLoaded = useCallback(
+    (conversationId: string | null) =>
+      Boolean(conversationId && historyLoadedConversationIdsRef.current.has(conversationId)),
+    [],
+  );
+
   return {
     callReplacementCount,
     connectionId,
     connectionState,
     connectionIdentity: () => logicalConnectionRef.current,
+    getChatMessages,
+    isHistoryLoaded,
     joinCall,
     leaveCall,
     message,
@@ -374,6 +551,9 @@ export function useServerRealtime(
     participants,
     publications,
     reconcile,
+    sendChat,
+    setConversationMessages,
+    subscribeChat,
     updatePresence: (muted: boolean, deafened: boolean) =>
       send({
         v: REALTIME_PROTOCOL_VERSION,

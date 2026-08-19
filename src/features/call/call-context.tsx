@@ -10,7 +10,14 @@ import {
 } from 'react';
 
 import type { RoomParticipant } from '../../../shared/protocol/room';
-import type { MemberView, RoomView } from '../../../shared/types/api';
+import type {
+  ConversationSummary,
+  FriendRequestView,
+  FriendView,
+  MemberView,
+  RoomView,
+  SocialStateView,
+} from '../../../shared/types/api';
 import { usePublicConfig } from '../../hooks/use-public-config';
 import { useAuth } from '../auth/auth-context';
 import { useServerRealtime } from '../rooms/use-server-realtime';
@@ -21,6 +28,13 @@ interface CallContextValue {
   config: ReturnType<typeof usePublicConfig>;
   loadError: string;
   members: MemberView[];
+  friends: FriendView[];
+  friendRequests: FriendRequestView[];
+  conversations: ConversationSummary[];
+  selectedConversation: ConversationSummary | null;
+  callConversation: ConversationSummary | null;
+  selectConversation(conversationId: string): void;
+  selectCallConversation(conversationId: string): void;
   room: RoomView | null;
   socket: Omit<ReturnType<typeof useServerRealtime>, 'participants'> & {
     participants: RoomParticipant[];
@@ -32,9 +46,24 @@ interface CallContextValue {
 const CallContext = createContext<CallContextValue | null>(null);
 
 export function CallProvider({ children }: { children: ReactNode }) {
-  const { bootstrap, user } = useAuth();
+  const { bootstrap, updateSocialState, user } = useAuth();
   const config = usePublicConfig();
-  const room = bootstrap?.channels[0] ?? null;
+  const defaultConversation = bootstrap?.conversations.find(
+    (conversation) => conversation.isDefault,
+  );
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [callConversationId, setCallConversationId] = useState<string | null>(null);
+  const selectedConversation =
+    bootstrap?.conversations.find((conversation) => conversation.id === selectedConversationId) ??
+    defaultConversation ??
+    bootstrap?.conversations[0] ??
+    null;
+  const callConversation =
+    bootstrap?.conversations.find((conversation) => conversation.id === callConversationId) ??
+    defaultConversation ??
+    null;
+  const room =
+    bootstrap?.channels.find((channel) => channel.id === callConversation?.callRoomId) ?? null;
   const loadError = bootstrap && !room ? 'Nenhuma sala está disponível agora.' : '';
   const [members, setMembers] = useState<MemberView[]>([]);
 
@@ -51,10 +80,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const handleSocialChange = useCallback(
+    (state: SocialStateView) => updateSocialState(state),
+    [updateSocialState],
+  );
+
   const realtime = useServerRealtime(
     user && bootstrap ? bootstrap.server.id : null,
     user?.id ?? null,
     handleMemberEvent,
+    handleSocialChange,
   );
   const participants = useMemo<RoomParticipant[]>(
     () =>
@@ -89,6 +124,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const value = useMemo<CallContextValue>(
     () => ({
       config,
+      friends: bootstrap?.friends ?? [],
+      friendRequests: bootstrap?.friendRequests ?? [],
+      conversations: bootstrap?.conversations ?? [],
+      selectedConversation,
+      callConversation,
+      selectConversation: setSelectedConversationId,
+      selectCallConversation: setCallConversationId,
       connectionState: supervisor.state,
       loadError,
       members,
@@ -96,7 +138,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
       socket,
       voice,
     }),
-    [config, loadError, members, room, socket, supervisor.state, voice],
+    [
+      bootstrap,
+      callConversation,
+      config,
+      loadError,
+      members,
+      room,
+      selectedConversation,
+      socket,
+      supervisor.state,
+      voice,
+    ],
   );
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;
