@@ -257,17 +257,39 @@ async function installBrowserFakes(page: Page): Promise<void> {
           this.dispatchEvent(
             new MessageEvent('message', {
               data: JSON.stringify({
-                v: 3,
-                type: 'room.ready',
+                v: 4,
+                type: 'server.ready',
                 payload: {
-                  callInstanceId: '66666666-6666-4666-8666-666666666666',
                   connectionId: '22222222-2222-4222-8222-222222222222',
                   connectionEpoch: Number.isSafeInteger(requestedEpoch) ? requestedEpoch : 1,
-                  resumed: socketUrl.searchParams.has('callInstanceId'),
+                  resumed: socketUrl.searchParams.has('connectionId'),
+                  onlineUserIds: ['11111111-1111-4111-8111-111111111111'],
+                  participants: [],
+                  publications: [],
+                },
+              }),
+            }),
+          );
+        }, 10);
+      }
+      send(rawMessage: string) {
+        const message = JSON.parse(rawMessage) as {
+          type: string;
+          payload: { channelId?: string; requestId?: string };
+        };
+        if (message.type === 'call.join' || message.type === 'call.takeover') {
+          this.dispatchEvent(
+            new MessageEvent('message', {
+              data: JSON.stringify({
+                v: 4,
+                type: 'call.joined',
+                payload: {
+                  requestId: message.payload.requestId,
+                  channelId: message.payload.channelId,
                   participants: [
                     {
                       userId: '11111111-1111-4111-8111-111111111111',
-                      displayName: 'Alice',
+                      channelId: 'room_general',
                       muted: false,
                       deafened: false,
                       speaking: false,
@@ -278,9 +300,23 @@ async function installBrowserFakes(page: Page): Promise<void> {
               }),
             }),
           );
-        }, 10);
+        }
+        if (message.type === 'call.leave') {
+          this.dispatchEvent(
+            new MessageEvent('message', {
+              data: JSON.stringify({
+                v: 4,
+                type: 'call.member.left',
+                payload: {
+                  requestId: message.payload.requestId,
+                  channelId: 'room_general',
+                  userId: '11111111-1111-4111-8111-111111111111',
+                },
+              }),
+            }),
+          );
+        }
       }
-      send() {}
       close(code = 1000, reason = '') {
         testWindow.__k0nnectSocketStats.closed += 1;
         this.readyState = FakeWebSocket.CLOSED;
@@ -294,58 +330,77 @@ async function installBrowserFakes(page: Page): Promise<void> {
 
 async function mockApi(page: Page): Promise<{ create: number; publish: number }> {
   const realtimeStats = { create: 0, publish: 0 };
+  let authenticated = false;
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     let data: unknown;
-    if (path === '/api/config') {
-      data = { realtimeEnabled: true, turnstileEnabled: false, registrationMode: 'invite' };
-    } else if (path === '/api/auth/session') {
-      data = { authenticated: false };
+    if (path === '/api/bootstrap') {
+      data = authenticated
+        ? {
+            authenticated: true,
+            user: USER,
+            csrfToken: 'csrf',
+            config: {
+              realtimeEnabled: true,
+              turnstileEnabled: false,
+              turnstileSiteKey: null,
+              registrationMode: 'invite',
+            },
+            server: { id: 'k0sec', name: 'K0Sec' },
+            channels: [
+              { id: 'room_general', slug: 'geral', name: 'Geral', kind: 'voice', position: 0 },
+            ],
+            members: [{ id: USER.id, displayName: USER.displayName, role: USER.role }],
+            capabilities: { manageInvites: false },
+          }
+        : {
+            authenticated: false,
+            config: {
+              realtimeEnabled: true,
+              turnstileEnabled: false,
+              turnstileSiteKey: null,
+              registrationMode: 'invite',
+            },
+          };
     } else if (path === '/api/auth/register-invite') {
+      authenticated = true;
       data = { user: USER, csrfToken: 'csrf', recoveryCodes: RECOVERY_CODES };
     } else if (path === '/api/auth/login') {
+      authenticated = true;
       data = { user: USER, csrfToken: 'csrf' };
     } else if (path === '/api/auth/logout') {
       data = { loggedOut: true };
     } else if (path === '/api/auth/sessions') {
       data = { sessions: [] };
-    } else if (path === '/api/rooms') {
-      data = {
-        rooms: [{ id: 'room_general', slug: 'geral', name: 'Geral', kind: 'voice', position: 0 }],
-      };
     } else if (path === '/api/realtime/session') {
       const realtimeRequest = request.postDataJSON() as {
         action: string;
-        mid?: string;
-        source?: string;
+        tracks?: { mid: string; source: string }[];
       };
       const { action } = realtimeRequest;
-      if (action === 'turn') data = { iceServers: [] };
-      else if (action === 'create') {
+      if (action === 'create') {
         realtimeStats.create += 1;
-        data = { sessionId: `session_${realtimeStats.create}` };
+        data = { sessionId: `session_${realtimeStats.create}`, iceServers: [] };
       } else if (action === 'publish') {
         realtimeStats.publish += 1;
-        expect(realtimeRequest.mid).toBeTruthy();
-        const kind =
-          realtimeRequest.source === 'camera' || realtimeRequest.source === 'screen-video'
-            ? 'video'
-            : 'audio';
         data = {
           sessionDescription: { type: 'answer', sdp: 'v=0' },
-          publication: {
+          publications: (realtimeRequest.tracks ?? []).map((track, index) => ({
             publicationId:
-              realtimeRequest.source === 'microphone'
+              track.source === 'microphone'
                 ? '33333333-3333-4333-8333-333333333333'
-                : realtimeRequest.source === 'camera'
+                : track.source === 'camera'
                   ? '44444444-4444-4444-8444-444444444444'
-                  : '55555555-5555-4555-8555-555555555555',
+                  : index === 0
+                    ? '55555555-5555-4555-8555-555555555555'
+                    : '77777777-7777-4777-8777-777777777777',
             userId: USER.id,
-            kind,
-            source: realtimeRequest.source,
+            kind:
+              track.source === 'microphone' || track.source === 'screen-audio' ? 'audio' : 'video',
+            source: track.source,
             createdAt: Date.now(),
-          },
+          })),
         };
       } else data = { closed: true, requiresImmediateRenegotiation: false };
     } else {
@@ -387,7 +442,7 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await page.getByRole('button', { name: 'Já guardei em segurança' }).click();
 
   await expect(page.getByRole('heading', { name: 'Geral' })).toBeVisible();
-  await expect(page.getByRole('main').getByText('Alice (você)')).toBeVisible();
+  await expect(page.getByText('Alice (você)').first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mostrar participantes' })).toHaveCount(0);
   await page.setViewportSize({ width: 1024, height: 768 });
   await expect(page.getByRole('button', { name: 'Mostrar participantes' })).toBeVisible();

@@ -16,20 +16,18 @@ describe('validação de entrada', () => {
     expect(displayNameSchema.safeParse('Álice').success).toBe(true);
   });
 
-  it('aceita somente RIDs publicados pela câmera', () => {
+  it('aceita lote limitado de publicações remotas', () => {
     const base = {
       action: 'subscribe',
       roomId: 'room_general',
       connectionId: crypto.randomUUID(),
       sessionId: 'session_1',
-      publicationId: crypto.randomUUID(),
+      publicationIds: [crypto.randomUUID()],
     };
-    expect(realtimeSessionRequestSchema.safeParse({ ...base, preferredRid: 'b' }).success).toBe(
-      true,
+    expect(realtimeSessionRequestSchema.safeParse(base).success).toBe(true);
+    expect(realtimeSessionRequestSchema.safeParse({ ...base, publicationIds: [] }).success).toBe(
+      false,
     );
-    expect(
-      realtimeSessionRequestSchema.safeParse({ ...base, preferredRid: 'arbitrary' }).success,
-    ).toBe(false);
   });
 
   it('exige motivo autoritativo ao encerrar uma publicação', () => {
@@ -70,7 +68,7 @@ describe('validação de entrada', () => {
     expect(registration.success).toBe(false);
     expect(
       clientRoomMessageSchema.safeParse({
-        v: 1,
+        v: 4,
         type: 'member.updated',
         payload: { muted: false, deafened: false, userId: crypto.randomUUID() },
       }).success,

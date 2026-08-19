@@ -1,8 +1,8 @@
 import { env, exports } from 'cloudflare:workers';
-import { runDurableObjectAlarm } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { ROOM_PROTOCOL_VERSION, type ServerRoomMessage } from '../../shared/protocol/room';
+import { REALTIME_PROTOCOL_VERSION, type ServerRoomMessage } from '../../shared/protocol/room';
+import type { ApiSuccess, BootstrapView } from '../../shared/types/api';
 import { resetDatabase, seedInvite } from '../helpers/database';
 import { apiRequest, sessionCookie } from '../helpers/http';
 
@@ -34,13 +34,9 @@ function nextClose(socket: WebSocket): Promise<CloseEvent> {
   return new Promise((resolve) => socket.addEventListener('close', resolve, { once: true }));
 }
 
-async function connect(
-  cookie: string,
-  resume?: { callInstanceId: string; connectionEpoch: number; connectionId: string },
-) {
-  const url = new URL('http://localhost:5173/api/rooms/room_general/socket');
+async function connect(cookie: string, resume?: { connectionEpoch: number; connectionId: string }) {
+  const url = new URL('http://localhost:5173/api/servers/k0sec/socket');
   if (resume) {
-    url.searchParams.set('callInstanceId', resume.callInstanceId);
     url.searchParams.set('connectionId', resume.connectionId);
     url.searchParams.set('connectionEpoch', String(resume.connectionEpoch));
   }
@@ -53,330 +49,208 @@ async function connect(
     },
   });
   expect(response.status).toBe(101);
-  expect(response.webSocket).not.toBeNull();
   const socket = response.webSocket;
   if (!socket) throw new Error('WebSocket ausente no teste');
   const ready = nextMessage(socket);
   socket.accept();
-  return { socket, ready: await ready };
+  const message = await ready;
+  if (message.type !== 'server.ready') throw new Error('Mensagem server.ready esperada');
+  return { socket, ready: message };
 }
 
-describe('sala em tempo real', () => {
+async function join(socket: WebSocket, channelId = 'room_general') {
+  const requestId = crypto.randomUUID();
+  const response = nextMessage(socket);
+  socket.send(
+    JSON.stringify({
+      v: REALTIME_PROTOCOL_VERSION,
+      type: 'call.join',
+      payload: { channelId, requestId },
+    }),
+  );
+  return response;
+}
+
+describe('servidor em tempo real', () => {
   beforeEach(resetDatabase);
 
-  it('recusa upgrade sem sessão, Origin externo e sala inexistente', async () => {
+  it('recusa upgrade sem sessão, Origin externo e servidor inexistente', async () => {
     const withoutSession = await exports.default.fetch(
-      'http://localhost:5173/api/rooms/room_general/socket',
-      {
-        headers: { Origin: 'http://localhost:5173', Upgrade: 'websocket' },
-      },
+      'http://localhost:5173/api/servers/k0sec/socket',
+      { headers: { Origin: 'http://localhost:5173', Upgrade: 'websocket' } },
     );
     expect(withoutSession.status).toBe(401);
-
     const cookie = await createAccount('alice', 'Alice');
     const invalidOrigin = await exports.default.fetch(
-      'http://localhost:5173/api/rooms/room_general/socket',
-      {
-        headers: { Origin: 'https://evil.example', Cookie: cookie, Upgrade: 'websocket' },
-      },
+      'http://localhost:5173/api/servers/k0sec/socket',
+      { headers: { Origin: 'https://evil.example', Cookie: cookie, Upgrade: 'websocket' } },
     );
     expect(invalidOrigin.status).toBe(403);
-    const missingRoom = await exports.default.fetch(
-      'http://localhost:5173/api/rooms/unknown/socket',
-      {
-        headers: { Origin: 'http://localhost:5173', Cookie: cookie, Upgrade: 'websocket' },
-      },
+    const missingServer = await exports.default.fetch(
+      'http://localhost:5173/api/servers/unknown/socket',
+      { headers: { Origin: 'http://localhost:5173', Cookie: cookie, Upgrade: 'websocket' } },
     );
-    expect(missingRoom.status).toBe(404);
-
-    const directDurableObject = await env.VOICE_ROOMS.getByName('room_general').fetch(
-      new Request('http://voice-room.internal', {
-        headers: {
-          Upgrade: 'websocket',
-          'X-K0nnect-User-Id': crypto.randomUUID(),
-          'X-K0nnect-Session-Id': crypto.randomUUID(),
-          'X-K0nnect-Display-Name': 'Forged',
-        },
-      }),
-    );
-    expect(directDurableObject.status).toBe(401);
+    expect(missingServer.status).toBe(404);
   });
 
-  it('propaga join, presença autoritativa, leave e reconexão sem duplicar usuário', async () => {
-    const aliceCookie = await createAccount('alice', 'Alice <script>');
-    const bobCookie = await createAccount('bob', 'Bob');
-    const alice = await connect(aliceCookie);
-    expect(alice.ready.type).toBe('room.ready');
-    const joined = nextMessage(alice.socket);
-    const bob = await connect(bobCookie);
-    expect((await joined).type).toBe('member.joined');
-    if (bob.ready.type !== 'room.ready') throw new Error('Mensagem room.ready esperada');
-    expect(bob.ready.payload.participants).toHaveLength(2);
-    expect(
-      bob.ready.payload.participants.some(
-        (participant) => participant.displayName === 'Alice <script>',
-      ),
-    ).toBe(true);
+  it('separa presença de call e mantém uma conta online em múltiplas sessões', async () => {
+    const cookie = await createAccount('alice', 'Alice');
+    const first = await connect(cookie);
+    const second = await connect(cookie);
+    expect(first.ready.payload.participants).toEqual([]);
+    expect(new Set(second.ready.payload.onlineUserIds).size).toBe(1);
+    expect((await join(first.socket)).type).toBe('call.joined');
+    expect((await join(second.socket)).type).toBe('call.conflict');
 
-    const updated = nextMessage(bob.socket);
-    alice.socket.send(
+    const replaced = nextMessage(first.socket);
+    const takeover = nextMessage(second.socket);
+    const requestId = crypto.randomUUID();
+    second.socket.send(
       JSON.stringify({
-        v: ROOM_PROTOCOL_VERSION,
-        type: 'member.updated',
-        payload: { muted: false, deafened: true },
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'call.takeover',
+        payload: { channelId: 'room_general', requestId },
       }),
     );
-    const updateMessage = await updated;
-    expect(updateMessage.type).toBe('member.updated');
-    if (updateMessage.type === 'member.updated') {
-      expect(updateMessage.payload.muted).toBe(true);
-      expect(updateMessage.payload.deafened).toBe(true);
-    }
-
-    const aliceClosed = nextClose(alice.socket);
-    const replacement = await connect(aliceCookie);
-    expect((await aliceClosed).code).toBe(4001);
-    if (replacement.ready.type !== 'room.ready') throw new Error('Mensagem room.ready esperada');
-    expect(
-      replacement.ready.payload.participants.filter(
-        (participant) => participant.displayName === 'Alice <script>',
-      ),
-    ).toHaveLength(1);
-
-    const left = nextMessage(replacement.socket);
-    bob.socket.close(1000, 'Saindo');
-    expect((await left).type).toBe('member.left');
-    replacement.socket.close(1000, 'Fim do teste');
+    expect((await replaced).type).toBe('call.replaced');
+    expect((await takeover).type).toBe('call.joined');
+    first.socket.close(1000, 'Fim');
+    second.socket.close(1000, 'Fim');
   });
 
-  it('fecha mensagens inválidas, tentativa de impersonation e payload grande', async () => {
+  it('sair da call mantém presença e fecha a mídia por um comando', async () => {
+    const connection = await connect(await createAccount('alice', 'Alice'));
+    await join(connection.socket);
+    const requestId = crypto.randomUUID();
+    const left = nextMessage(connection.socket);
+    connection.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'call.leave',
+        payload: { requestId },
+      }),
+    );
+    expect((await left).type).toBe('call.member.left');
+    expect(connection.socket.readyState).toBe(WebSocket.OPEN);
+    connection.socket.close(1000, 'Fim');
+  });
+
+  it('permanece ocioso sem heartbeat ou polling da aplicação', async () => {
+    const connection = await connect(await createAccount('alice', 'Alice'));
+    let messagesAfterSnapshot = 0;
+    connection.socket.addEventListener('message', () => {
+      messagesAfterSnapshot += 1;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(messagesAfterSnapshot).toBe(0);
+    connection.socket.close(1000, 'Fim');
+  });
+
+  it('retoma conexão lógica e publicações durante o grace period', async () => {
     const cookie = await createAccount('alice', 'Alice');
     const connection = await connect(cookie);
-    const invalidClose = nextClose(connection.socket);
-    const impersonation = JSON.stringify({
-      v: ROOM_PROTOCOL_VERSION,
-      type: 'member.updated',
-      payload: { muted: false, deafened: false, userId: crypto.randomUUID() },
-    });
-    connection.socket.send('{');
-    connection.socket.send(impersonation);
-    connection.socket.send('[]');
-    expect((await invalidClose).code).toBe(1008);
-
-    const oversized = await connect(cookie);
-    const oversizedClose = nextClose(oversized.socket);
-    oversized.socket.send('A'.repeat(4_097));
-    expect((await oversizedClose).code).toBe(1009);
-  });
-
-  it('encerra a conexão sob flooding de mensagens', async () => {
-    const connection = await connect(await createAccount('alice', 'Alice'));
-    const closed = nextClose(connection.socket);
-    const heartbeat = JSON.stringify({ v: ROOM_PROTOCOL_VERSION, type: 'heartbeat', payload: {} });
-    for (let message = 0; message < 51; message += 1) connection.socket.send(heartbeat);
-    expect((await closed).code).toBe(1009);
-  });
-
-  it('encerra WebSocket existente quando a sessão é revogada', async () => {
-    const connection = await connect(await createAccount('alice', 'Alice'));
-    const closed = nextClose(connection.socket);
-    await env.DB.prepare('UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL')
-      .bind(new Date().toISOString())
-      .run();
-
-    const alarmRan = await runDurableObjectAlarm(env.VOICE_ROOMS.getByName('room_general'));
-    expect(alarmRan).toBe(true);
-    expect((await closed).code).toBe(4003);
-  });
-
-  it('retoma a identidade lógica e a mídia dentro do grace period sem anunciar saída', async () => {
-    const aliceCookie = await createAccount('alice', 'Alice');
-    const bobCookie = await createAccount('bob', 'Bob');
-    const alice = await connect(aliceCookie);
-    const aliceJoined = nextMessage(alice.socket);
-    const bob = await connect(bobCookie);
-    await aliceJoined;
-    if (alice.ready.type !== 'room.ready' || bob.ready.type !== 'room.ready') {
-      throw new Error('Mensagem room.ready esperada');
-    }
-    const aliceUserId = alice.ready.payload.participants.find(
-      (participant) => participant.displayName === 'Alice',
-    )?.userId;
-    if (!aliceUserId) throw new Error('Participante Alice ausente');
-
-    const room = env.VOICE_ROOMS.getByName('room_general');
+    await join(connection.socket);
+    const userId = connection.ready.payload.onlineUserIds[0]!;
+    const server = env.SERVER_REALTIME.getByName('k0sec');
     expect(
-      await room.registerRealtimeSession(
-        aliceUserId,
-        alice.ready.payload.connectionId,
+      await server.registerRealtimeSession(
+        userId,
+        connection.ready.payload.connectionId,
         'alice_session',
       ),
     ).toBe(true);
-    const publicationId = await room.reservePublication(
-      aliceUserId,
-      alice.ready.payload.connectionId,
+    const publicationId = await server.reservePublication(
+      userId,
+      connection.ready.payload.connectionId,
       'alice_session',
       'camera',
       '1',
     );
-    if (!publicationId) throw new Error('Reserva de publicação esperada');
-    const publishedForBob = nextMessage(bob.socket);
-    await room.completePublication(
-      aliceUserId,
-      alice.ready.payload.connectionId,
+    if (!publicationId) throw new Error('Reserva esperada');
+    await server.completePublication(
+      userId,
+      connection.ready.payload.connectionId,
       publicationId,
-      'alice_camera_track',
+      'camera_track',
     );
-    expect((await publishedForBob).type).toBe('media.published');
-
-    const aliceClosed = nextClose(alice.socket);
-    alice.socket.close(1012, 'Falha transitória');
-    await aliceClosed;
-    const restoredForBob = nextMessage(bob.socket);
-    const resumed = await connect(aliceCookie, {
-      callInstanceId: alice.ready.payload.callInstanceId,
-      connectionEpoch: alice.ready.payload.connectionEpoch + 1,
-      connectionId: alice.ready.payload.connectionId,
+    connection.socket.close(1012, 'Falha transitória');
+    const resumed = await connect(cookie, {
+      connectionId: connection.ready.payload.connectionId,
+      connectionEpoch: connection.ready.payload.connectionEpoch + 1,
     });
-    if (resumed.ready.type !== 'room.ready') throw new Error('Mensagem room.ready esperada');
-    expect(resumed.ready.payload).toMatchObject({
-      callInstanceId: alice.ready.payload.callInstanceId,
-      connectionEpoch: alice.ready.payload.connectionEpoch + 1,
-      connectionId: alice.ready.payload.connectionId,
-      resumed: true,
-    });
+    expect(resumed.ready.payload.resumed).toBe(true);
     expect(resumed.ready.payload.publications).toEqual([
       expect.objectContaining({ publicationId, source: 'camera' }),
     ]);
-    expect((await restoredForBob).type).toBe('member.updated');
-
-    const forged = await connect(await createAccount('charlie', 'Charlie'), {
-      callInstanceId: alice.ready.payload.callInstanceId,
-      connectionEpoch: alice.ready.payload.connectionEpoch + 2,
-      connectionId: alice.ready.payload.connectionId,
-    });
-    if (forged.ready.type !== 'room.ready') throw new Error('Mensagem room.ready esperada');
-    expect(forged.ready.payload.resumed).toBe(false);
-    expect(forged.ready.payload.connectionId).not.toBe(alice.ready.payload.connectionId);
-
-    resumed.socket.close(1000, 'Fim do teste');
-    bob.socket.close(1000, 'Fim do teste');
-    forged.socket.close(1000, 'Fim do teste');
+    resumed.socket.close(1000, 'Fim');
   });
 
-  it('autoriza publicações por ID opaco e aplica limites por fonte e sala', async () => {
-    const alice = await connect(await createAccount('alice', 'Alice'));
-    const bob = await connect(await createAccount('bob', 'Bob'));
-    if (alice.ready.type !== 'room.ready' || bob.ready.type !== 'room.ready') {
-      throw new Error('Mensagem room.ready esperada');
-    }
-    const aliceUserId = alice.ready.payload.participants.find(
-      (participant) => participant.displayName === 'Alice',
-    )?.userId;
-    const bobUserId = bob.ready.payload.participants.find(
-      (participant) => participant.displayName === 'Bob',
-    )?.userId;
-    if (!aliceUserId || !bobUserId) throw new Error('Participante ausente');
+  it('rejeita impersonation, payload grande e flooding sem heartbeat', async () => {
+    const connection = await connect(await createAccount('alice', 'Alice'));
+    const invalidClose = nextClose(connection.socket);
+    connection.socket.send('{');
+    connection.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'member.updated',
+        payload: { muted: false, deafened: false, userId: crypto.randomUUID() },
+      }),
+    );
+    connection.socket.send('[]');
+    expect((await invalidClose).code).toBe(1008);
 
-    const room = env.VOICE_ROOMS.getByName('room_general');
-    expect(
-      await room.registerRealtimeSession(
-        aliceUserId,
-        alice.ready.payload.connectionId,
-        'alice_session',
-      ),
-    ).toBe(true);
-    expect(
-      await room.registerRealtimeSession(bobUserId, bob.ready.payload.connectionId, 'bob_session'),
-    ).toBe(true);
-    const publicationId = await room.reservePublication(
-      aliceUserId,
-      alice.ready.payload.connectionId,
-      'alice_session',
-      'camera',
-      '1',
-    );
-    expect(publicationId).toMatch(/^[0-9a-f-]{36}$/u);
-    expect(
-      await room.reservePublication(
-        aliceUserId,
-        alice.ready.payload.connectionId,
-        'alice_session',
-        'camera',
-        '2',
-      ),
-    ).toBeNull();
-    if (!publicationId) throw new Error('Reserva esperada');
-    const publication = await room.completePublication(
-      aliceUserId,
-      alice.ready.payload.connectionId,
-      publicationId,
-      'internal_track_name',
-    );
-    expect(publication).toMatchObject({ publicationId, source: 'camera', kind: 'video' });
+    const oversized = await connect(await createAccount('bob', 'Bob'));
+    const oversizedClose = nextClose(oversized.socket);
+    oversized.socket.send('A'.repeat(4_097));
+    expect((await oversizedClose).code).toBe(1009);
 
-    const resolved = await room.resolvePublication(
-      bobUserId,
-      bob.ready.payload.connectionId,
-      publicationId,
-    );
-    expect(resolved?.publication.publicationId).toBe(publicationId);
-    expect(resolved?.realtimeTrackName).toBe('internal_track_name');
-    const subscriptionReservations = await Promise.all([
-      room.reserveSubscription(
-        bobUserId,
-        bob.ready.payload.connectionId,
-        'bob_session',
-        publicationId,
-      ),
-      room.reserveSubscription(
-        bobUserId,
-        bob.ready.payload.connectionId,
-        'bob_session',
-        publicationId,
-      ),
+    const flooded = await connect(await createAccount('charlie', 'Charlie'));
+    const floodedClose = nextClose(flooded.socket);
+    const resync = JSON.stringify({
+      v: REALTIME_PROTOCOL_VERSION,
+      type: 'state.resync',
+      payload: {},
+    });
+    for (let index = 0; index < 51; index += 1) flooded.socket.send(resync);
+    expect((await floodedClose).code).toBe(1009);
+  });
+
+  it('fecha sockets por revogação orientada a evento', async () => {
+    const connection = await connect(await createAccount('alice', 'Alice'));
+    const closed = nextClose(connection.socket);
+    const session = await env.DB.prepare('SELECT id FROM sessions LIMIT 1').first<{ id: string }>();
+    if (!session) throw new Error('Sessão ausente');
+    await env.SERVER_REALTIME.getByName('k0sec').disconnectSession(session.id);
+    expect((await closed).code).toBe(4003);
+  });
+
+  it('retoma a conexão lógica depois da rotação autenticada da sessão', async () => {
+    const cookie = await createAccount('alice', 'Alice');
+    const connection = await connect(cookie);
+    expect((await join(connection.socket)).type).toBe('call.joined');
+
+    const bootstrapResponse = await apiRequest('/api/bootstrap', { cookie });
+    const bootstrap = await bootstrapResponse.json<ApiSuccess<BootstrapView>>();
+    if (!bootstrap.data.authenticated) throw new Error('Bootstrap autenticado esperado');
+
+    const closed = nextClose(connection.socket);
+    const rotated = await apiRequest('/api/auth/recovery-codes/regenerate', {
+      method: 'POST',
+      cookie,
+      csrfToken: bootstrap.data.csrfToken,
+      body: JSON.stringify({ password: 'uma-senha-segura-e-longa' }),
+    });
+    expect(rotated.status).toBe(200);
+    expect((await closed).code).toBe(4004);
+
+    const resumed = await connect(sessionCookie(rotated), {
+      connectionId: connection.ready.payload.connectionId,
+      connectionEpoch: connection.ready.payload.connectionEpoch + 1,
+    });
+    expect(resumed.ready.payload.resumed).toBe(true);
+    expect(resumed.ready.payload.participants).toEqual([
+      expect.objectContaining({ userId: connection.ready.payload.onlineUserIds[0] }),
     ]);
-    expect(subscriptionReservations.filter(Boolean)).toHaveLength(1);
-    expect(
-      await room.completeSubscription(
-        bobUserId,
-        bob.ready.payload.connectionId,
-        'bob_session',
-        publicationId,
-        'remote-mid-1',
-      ),
-    ).toBe(true);
-    expect(
-      await room.takeSubscription(
-        bobUserId,
-        bob.ready.payload.connectionId,
-        'bob_session',
-        publicationId,
-      ),
-    ).toBe('remote-mid-1');
-    expect(
-      await room.resolvePublication(aliceUserId, alice.ready.payload.connectionId, publicationId),
-    ).toBeNull();
-    expect(
-      await env.VOICE_ROOMS.getByName('other_room').resolvePublication(
-        bobUserId,
-        bob.ready.payload.connectionId,
-        publicationId,
-      ),
-    ).toBeNull();
-    expect(
-      await env.VOICE_ROOMS.getByName('other_room').reserveSubscription(
-        bobUserId,
-        bob.ready.payload.connectionId,
-        'bob_session',
-        publicationId,
-      ),
-    ).toBeNull();
-    expect(
-      await room.resolvePublication(bobUserId, bob.ready.payload.connectionId, crypto.randomUUID()),
-    ).toBeNull();
-
-    alice.socket.close(1000, 'Fim do teste');
-    bob.socket.close(1000, 'Fim do teste');
+    resumed.socket.close(1000, 'Fim');
   });
 });

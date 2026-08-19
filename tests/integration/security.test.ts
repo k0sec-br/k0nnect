@@ -10,7 +10,7 @@ describe('controles HTTP e autorização', () => {
   beforeEach(resetDatabase);
 
   it('aplica headers de segurança à API', async () => {
-    const response = await apiRequest('/api/config');
+    const response = await apiRequest('/api/bootstrap');
     expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'self'");
     expect(response.headers.get('Content-Security-Policy')).not.toContain("'unsafe-eval'");
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');

@@ -54,6 +54,40 @@ async function installSettingsBrowserFakes(page: Page): Promise<void> {
       configurable: true,
       value: { async writeText() {} },
     });
+    class FakeWebSocket extends EventTarget {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSED = 3;
+      readyState = FakeWebSocket.CONNECTING;
+      constructor() {
+        super();
+        window.setTimeout(() => {
+          this.readyState = FakeWebSocket.OPEN;
+          this.dispatchEvent(
+            new MessageEvent('message', {
+              data: JSON.stringify({
+                v: 4,
+                type: 'server.ready',
+                payload: {
+                  connectionId: '22222222-2222-4222-8222-222222222222',
+                  connectionEpoch: 1,
+                  resumed: false,
+                  onlineUserIds: ['11111111-1111-4111-8111-111111111111'],
+                  participants: [],
+                  publications: [],
+                },
+              }),
+            }),
+          );
+        }, 0);
+      }
+      send() {}
+      close(code = 1000, reason = '') {
+        this.readyState = FakeWebSocket.CLOSED;
+        this.dispatchEvent(new CloseEvent('close', { code, reason }));
+      }
+    }
+    Object.defineProperty(window, 'WebSocket', { configurable: true, value: FakeWebSocket });
   });
 }
 
@@ -95,8 +129,24 @@ async function mockSettingsApi(page: Page, user = OWNER): Promise<void> {
     const method = request.method();
     let data: unknown = {};
 
-    if (path === '/api/auth/session') {
-      data = { authenticated: true, user, csrfToken: 'settings-csrf' };
+    if (path === '/api/bootstrap') {
+      data = {
+        authenticated: true,
+        user,
+        csrfToken: 'settings-csrf',
+        config: {
+          realtimeEnabled: true,
+          turnstileEnabled: false,
+          turnstileSiteKey: null,
+          registrationMode: 'invite',
+        },
+        server: { id: 'k0sec', name: 'K0Sec' },
+        channels: [
+          { id: 'room_general', slug: 'geral', name: 'Geral', kind: 'voice', position: 0 },
+        ],
+        members: [{ id: user.id, displayName: user.displayName, role: user.role }],
+        capabilities: { manageInvites: user.role !== 'member' },
+      };
     } else if (path === '/api/admin/invites' && method === 'GET') {
       data = { invites };
     } else if (path === '/api/admin/invites' && method === 'POST') {
@@ -127,10 +177,6 @@ async function mockSettingsApi(page: Page, user = OWNER): Promise<void> {
       };
     } else if (path === '/api/auth/logout' || path === '/api/auth/logout-all') {
       data = { loggedOut: true };
-    } else if (path === '/api/rooms') {
-      data = {
-        rooms: [{ id: 'room_general', slug: 'geral', name: 'Geral', kind: 'voice', position: 0 }],
-      };
     }
 
     await route.fulfill({
