@@ -397,9 +397,9 @@ describe('servidor em tempo real', () => {
       ).bind(lowId, highId, aliceId, now, now),
       env.DB.prepare(
         `INSERT INTO conversations (
-           id, kind, name, owner_user_id, dm_pair_key, call_room_id,
+           id, kind, space_kind, name, owner_user_id, dm_pair_key, call_room_id,
            is_default, created_at, updated_at
-         ) VALUES ('dm_race', 'dm', NULL, NULL, ?, NULL, 0, ?, ?)`,
+         ) VALUES ('dm_race', 'dm', NULL, NULL, NULL, ?, NULL, 0, ?, ?)`,
       ).bind(`${lowId}:${highId}`, now, now),
       env.DB.prepare(
         "INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at) VALUES ('dm_race', ?, 'member', ?)",
@@ -452,8 +452,9 @@ describe('servidor em tempo real', () => {
       ).bind(now),
       env.DB.prepare(
         `INSERT INTO conversations (
-           id, kind, name, owner_user_id, call_room_id, is_default, created_at, updated_at
-         ) VALUES ('group_private', 'group', 'Private', ?, 'call_private', 0, ?, ?)`,
+           id, kind, space_kind, name, owner_user_id, call_room_id,
+           is_default, created_at, updated_at
+         ) VALUES ('group_private', 'group', 'group', 'Private', ?, 'call_private', 0, ?, ?)`,
       ).bind(aliceId, now, now),
       env.DB.prepare(
         "INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at) VALUES ('group_private', ?, 'owner', ?)",
@@ -520,8 +521,9 @@ describe('servidor em tempo real', () => {
       ).bind(now),
       env.DB.prepare(
         `INSERT INTO conversations (
-           id, kind, name, owner_user_id, call_room_id, is_default, created_at, updated_at
-         ) VALUES ('group_removed', 'group', 'Removed', ?, 'call_removed', 0, ?, ?)`,
+           id, kind, space_kind, name, owner_user_id, call_room_id,
+           is_default, created_at, updated_at
+         ) VALUES ('group_removed', 'group', 'group', 'Removed', ?, 'call_removed', 0, ?, ?)`,
       ).bind(aliceId, now, now),
       env.DB.prepare(
         "INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at) VALUES ('group_removed', ?, 'owner', ?)",

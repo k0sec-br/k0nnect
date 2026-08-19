@@ -53,6 +53,7 @@ export interface FriendRequestView extends SocialUserView {
 export interface ConversationSummary {
   id: string;
   kind: 'dm' | 'group';
+  spaceKind: 'community' | 'group' | null;
   name: string;
   ownerUserId: string | null;
   callRoomId: string | null;

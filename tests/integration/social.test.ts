@@ -66,7 +66,12 @@ describe('social, grupos e chat persistente', () => {
     const alice = await createAccount('alice', 'Alice');
     const data = await bootstrap(alice);
     expect(data.conversations).toEqual([
-      expect.objectContaining({ id: 'group_k0sec', isDefault: true, callRoomId: 'room_general' }),
+      expect.objectContaining({
+        id: 'group_k0sec',
+        spaceKind: 'community',
+        isDefault: true,
+        callRoomId: 'room_general',
+      }),
     ]);
     expect(data.conversations[0]?.members).toContainEqual(
       expect.objectContaining({ id: alice.user.id, username: 'alice' }),
@@ -148,7 +153,10 @@ describe('social, grupos e chat persistente', () => {
     });
     expect(created.status).toBe(201);
     const createdPayload = await created.json<ApiSuccess<{ id: string }>>();
-    await bootstrap(bob);
+    const bobBootstrap = await bootstrap(bob);
+    expect(bobBootstrap.conversations).toContainEqual(
+      expect.objectContaining({ id: createdPayload.data.id, spaceKind: 'group' }),
+    );
     const unrelatedHistory = await apiRequest(
       `/api/social/conversations/${createdPayload.data.id}/messages`,
       { cookie: charlie.cookie },

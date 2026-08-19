@@ -137,8 +137,9 @@ export async function createGroup(
     ).bind(roomId, conversationId, name, now),
     env.DB.prepare(
       `INSERT INTO conversations (
-         id, kind, name, owner_user_id, call_room_id, is_default, created_at, updated_at
-       ) VALUES (?, 'group', ?, ?, ?, 0, ?, ?)`,
+         id, kind, space_kind, name, owner_user_id, call_room_id,
+         is_default, created_at, updated_at
+       ) VALUES (?, 'group', 'group', ?, ?, ?, 0, ?, ?)`,
     ).bind(conversationId, name, ownerId, roomId, now, now),
     env.DB.prepare(
       `INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at)

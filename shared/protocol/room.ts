@@ -73,6 +73,7 @@ const socialStateSchema = z.object({
     z.object({
       id: conversationIdSchema,
       kind: z.enum(['dm', 'group']),
+      spaceKind: z.enum(['community', 'group']).nullable(),
       name: z.string().min(1).max(40),
       ownerUserId: z.string().uuid().nullable(),
       callRoomId: channelIdSchema.nullable(),

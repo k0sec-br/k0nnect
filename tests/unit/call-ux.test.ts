@@ -53,6 +53,7 @@ describe('autor de mensagem', () => {
         conversation: {
           id: 'conversation_general',
           kind: 'group',
+          spaceKind: 'community',
           name: 'K0Sec',
           ownerUserId: 'user_owner',
           callRoomId: 'room_general',

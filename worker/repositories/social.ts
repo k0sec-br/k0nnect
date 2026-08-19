@@ -19,6 +19,7 @@ interface FriendRow {
 interface ConversationRow {
   id: string;
   kind: 'dm' | 'group';
+  space_kind: 'community' | 'group' | null;
   name: string | null;
   owner_user_id: string | null;
   call_room_id: string | null;
@@ -57,7 +58,11 @@ export async function listSocialBootstrap(
       .bind(userId, userId, userId),
     database
       .prepare(
-        `SELECT c.id, c.kind, c.name, c.owner_user_id, c.call_room_id, c.is_default,
+        `SELECT c.id, c.kind, c.space_kind, c.name, c.owner_user_id,
+                CASE WHEN c.kind = 'dm'
+                  THEN 'dmcall_' || substr(c.id, 4, 57)
+                  ELSE c.call_room_id END AS call_room_id,
+                c.is_default,
                 m.id AS last_message_id, m.sender_id AS last_sender_id,
                 m.created_at AS last_created_at,
                 m.deleted_at AS last_deleted_at
@@ -118,6 +123,7 @@ export async function listSocialBootstrap(
       return {
         id: row.id,
         kind: row.kind,
+        spaceKind: row.kind === 'dm' ? null : row.space_kind,
         name: row.kind === 'dm' ? (peer?.displayName ?? 'Conversa') : (row.name ?? 'Grupo'),
         ownerUserId: row.owner_user_id,
         callRoomId: row.call_room_id,
@@ -192,7 +198,11 @@ export async function loadRealtimeCapabilities(database: D1Database, userId: str
   const capabilityResults = await database.batch([
     database
       .prepare(
-        `SELECT cm.conversation_id, c.call_room_id, c.kind,
+        `SELECT cm.conversation_id,
+                CASE WHEN c.kind = 'dm'
+                  THEN 'dmcall_' || substr(c.id, 4, 57)
+                  ELSE c.call_room_id END AS call_room_id,
+                c.kind,
                 CASE WHEN c.kind = 'dm' THEN (
                   SELECT peer.user_id FROM conversation_members peer
                   WHERE peer.conversation_id = c.id AND peer.user_id <> cm.user_id

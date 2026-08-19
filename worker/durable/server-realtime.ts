@@ -501,9 +501,9 @@ export class ServerRealtime extends DurableObject<Env> {
         await this.env.DB.batch([
           this.env.DB.prepare(
             `INSERT INTO conversations (
-               id, kind, name, owner_user_id, dm_pair_key, call_room_id,
+               id, kind, space_kind, name, owner_user_id, dm_pair_key, call_room_id,
                is_default, created_at, updated_at
-             ) VALUES (?, 'dm', NULL, NULL, ?, NULL, 0, ?, ?)
+             ) VALUES (?, 'dm', NULL, NULL, NULL, ?, NULL, 0, ?, ?)
              ON CONFLICT(dm_pair_key) DO NOTHING`,
           ).bind(conversationId, pairKey, now, now),
           this.env.DB.prepare(
