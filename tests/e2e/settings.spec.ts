@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { REALTIME_PROTOCOL_VERSION } from '../../shared/protocol/room';
+
 const OWNER = {
   id: '11111111-1111-4111-8111-111111111111',
   username: 'paznic',
@@ -18,7 +20,7 @@ function isoFromNow(offsetMilliseconds: number): string {
 }
 
 async function installSettingsBrowserFakes(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+  await page.addInitScript((protocolVersion) => {
     class FakeMediaStream {
       getTracks() {
         return [];
@@ -63,10 +65,11 @@ async function installSettingsBrowserFakes(page: Page): Promise<void> {
         super();
         window.setTimeout(() => {
           this.readyState = FakeWebSocket.OPEN;
+          this.dispatchEvent(new Event('open'));
           this.dispatchEvent(
             new MessageEvent('message', {
               data: JSON.stringify({
-                v: 4,
+                v: protocolVersion,
                 type: 'server.ready',
                 payload: {
                   connectionId: '22222222-2222-4222-8222-222222222222',
@@ -88,7 +91,7 @@ async function installSettingsBrowserFakes(page: Page): Promise<void> {
       }
     }
     Object.defineProperty(window, 'WebSocket', { configurable: true, value: FakeWebSocket });
-  });
+  }, REALTIME_PROTOCOL_VERSION);
 }
 
 async function mockSettingsApi(page: Page, user = OWNER): Promise<void> {
@@ -144,7 +147,29 @@ async function mockSettingsApi(page: Page, user = OWNER): Promise<void> {
         channels: [
           { id: 'room_general', slug: 'geral', name: 'Geral', kind: 'voice', position: 0 },
         ],
-        members: [{ id: user.id, displayName: user.displayName, role: user.role }],
+        members: [
+          {
+            id: user.id,
+            username: user.username,
+            displayName: user.displayName,
+            role: user.role,
+          },
+        ],
+        friends: [],
+        friendRequests: [],
+        conversations: [
+          {
+            id: 'group_k0sec',
+            kind: 'group',
+            spaceKind: 'community',
+            name: 'K0Sec',
+            ownerUserId: null,
+            callRoomId: 'room_general',
+            isDefault: true,
+            members: [{ id: user.id, username: user.username, displayName: user.displayName }],
+            lastMessage: null,
+          },
+        ],
         capabilities: { manageInvites: user.role !== 'member' },
       };
     } else if (path === '/api/admin/invites' && method === 'GET') {

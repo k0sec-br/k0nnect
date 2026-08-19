@@ -155,6 +155,44 @@
   gap: 0.12rem;
   padding: 0.35rem 0 0 1.2rem;
 }
+.private-group-sidebar {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.25rem 0.4rem;
+}
+.private-group-sidebar > span {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+.private-group-sidebar > div {
+  display: grid;
+  gap: 0.2rem;
+}
+.private-group-member {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.25rem;
+}
+.private-group-member > span {
+  display: grid;
+  min-width: 0;
+}
+.private-group-member strong,
+.private-group-member small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.private-group-member strong {
+  font-size: 0.82rem;
+}
+.private-group-member small {
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+}
 .channel-member {
   display: grid;
   min-width: 0;
@@ -662,6 +700,34 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+.ephemeral-call-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem clamp(0.8rem, 2.5vw, 2rem);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-deep);
+}
+.ephemeral-call-banner > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.ephemeral-call-banner strong {
+  font-size: 0.8rem;
+}
+.ephemeral-call-banner span {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ephemeral-call-banner .button {
+  min-height: 2rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.72rem;
 }
 .message-list {
   min-height: 0;
@@ -1335,8 +1401,14 @@
   .social-home {
     padding: 1rem;
   }
-  .chat-call-button {
+  .chat-header-actions .button.ghost {
     display: none;
+  }
+  .ephemeral-call-banner {
+    flex-wrap: wrap;
+  }
+  .ephemeral-call-banner > div {
+    flex-basis: 100%;
   }
   .message-composer {
     padding-bottom: 0.75rem;

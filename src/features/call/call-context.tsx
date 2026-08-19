@@ -50,7 +50,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const { bootstrap, updateSocialState, user } = useAuth();
   const config = usePublicConfig();
   const defaultConversation = bootstrap?.conversations.find(
-    (conversation) => conversation.isDefault,
+    (conversation) => conversation.spaceKind === 'community',
   );
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [callConversationId, setCallConversationId] = useState<string | null>(null);
@@ -63,8 +63,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
     bootstrap?.conversations.find((conversation) => conversation.id === callConversationId) ??
     defaultConversation ??
     null;
-  const room =
-    bootstrap?.channels.find((channel) => channel.id === callConversation?.callRoomId) ?? null;
+  const room = useMemo<RoomView | null>(() => {
+    const persistedRoom = bootstrap?.channels.find(
+      (channel) => channel.id === callConversation?.callRoomId,
+    );
+    return (
+      persistedRoom ??
+      (callConversation?.callRoomId
+        ? {
+            id: callConversation.callRoomId,
+            slug: callConversation.callRoomId,
+            name: callConversation.kind === 'dm' ? 'Chamada' : callConversation.name,
+            kind: 'voice',
+            position: 0,
+          }
+        : null)
+    );
+  }, [bootstrap?.channels, callConversation]);
   const loadError = bootstrap && !room ? 'Nenhuma sala está disponível agora.' : '';
   const [members, setMembers] = useState<MemberView[]>([]);
 
@@ -121,14 +136,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
     socket,
     voice,
   });
+  const joinVoice = voice.join;
   const joinConversationCall = useCallback(
     (conversationId: string) => {
       const conversation = bootstrap?.conversations.find((item) => item.id === conversationId);
       if (!conversation?.callRoomId) return;
       setCallConversationId(conversationId);
-      void voice.join(false, conversation.callRoomId);
+      void joinVoice(false, conversation.callRoomId);
     },
-    [bootstrap?.conversations, voice.join],
+    [bootstrap?.conversations, joinVoice],
   );
 
   const value = useMemo<CallContextValue>(

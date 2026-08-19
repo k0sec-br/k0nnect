@@ -133,7 +133,7 @@ describe('servidor em tempo real', () => {
     expect((await join(second.socket)).type).toBe('call.conflict');
 
     const replaced = nextMessage(first.socket);
-    const takeover = nextMessage(second.socket);
+    const takeover = nextMessageOfType(second.socket, 'call.joined');
     const requestId = crypto.randomUUID();
     second.socket.send(
       JSON.stringify({
@@ -146,6 +146,19 @@ describe('servidor em tempo real', () => {
     expect((await takeover).type).toBe('call.joined');
     first.socket.close(1000, 'Fim');
     second.socket.close(1000, 'Fim');
+  });
+
+  it('notifica membros autorizados quando uma chamada fica disponível', async () => {
+    const alice = await connect(await createAccount('alice', 'Alice'));
+    const bob = await connect(await createAccount('bob', 'Bob'));
+    const available = nextMessageOfType(bob.socket, 'call.member.joined');
+    expect((await join(alice.socket)).type).toBe('call.joined');
+    const availability = await available;
+    expect(availability.type).toBe('call.member.joined');
+    if (availability.type !== 'call.member.joined') throw new Error('Evento de call esperado');
+    expect(availability.payload.channelId).toBe('room_general');
+    alice.socket.close(1000, 'Fim');
+    bob.socket.close(1000, 'Fim');
   });
 
   it('sair da call mantém presença e fecha a mídia por um comando', async () => {

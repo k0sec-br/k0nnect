@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { REALTIME_PROTOCOL_VERSION } from '../../shared/protocol/room';
+
 const USER = {
   id: '11111111-1111-4111-8111-111111111111',
   username: 'alice',
@@ -12,7 +14,7 @@ const RECOVERY_CODES = Array.from(
 );
 
 async function installBrowserFakes(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+  await page.addInitScript((protocolVersion) => {
     const testWindow = window as typeof window & {
       __k0nnectDropSocket(): void;
       __k0nnectFailPeer(): void;
@@ -252,19 +254,32 @@ async function installBrowserFakes(page: Page): Promise<void> {
         testWindow.__k0nnectSocketStats.created += 1;
         const socketUrl = new URL(url);
         const requestedEpoch = Number(socketUrl.searchParams.get('connectionEpoch'));
+        const resumed = socketUrl.searchParams.has('connectionId');
         window.setTimeout(() => {
           this.readyState = FakeWebSocket.OPEN;
+          this.dispatchEvent(new Event('open'));
           this.dispatchEvent(
             new MessageEvent('message', {
               data: JSON.stringify({
-                v: 4,
+                v: protocolVersion,
                 type: 'server.ready',
                 payload: {
                   connectionId: '22222222-2222-4222-8222-222222222222',
-                  connectionEpoch: Number.isSafeInteger(requestedEpoch) ? requestedEpoch : 1,
-                  resumed: socketUrl.searchParams.has('connectionId'),
+                  connectionEpoch:
+                    Number.isSafeInteger(requestedEpoch) && requestedEpoch > 0 ? requestedEpoch : 1,
+                  resumed,
                   onlineUserIds: ['11111111-1111-4111-8111-111111111111'],
-                  participants: [],
+                  participants: resumed
+                    ? [
+                        {
+                          userId: '11111111-1111-4111-8111-111111111111',
+                          channelId: 'room_general',
+                          muted: false,
+                          deafened: false,
+                          speaking: false,
+                        },
+                      ]
+                    : [],
                   publications: [],
                 },
               }),
@@ -281,7 +296,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
           this.dispatchEvent(
             new MessageEvent('message', {
               data: JSON.stringify({
-                v: 4,
+                v: protocolVersion,
                 type: 'call.joined',
                 payload: {
                   requestId: message.payload.requestId,
@@ -305,7 +320,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
           this.dispatchEvent(
             new MessageEvent('message', {
               data: JSON.stringify({
-                v: 4,
+                v: protocolVersion,
                 type: 'call.member.left',
                 payload: {
                   requestId: message.payload.requestId,
@@ -325,7 +340,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
     }
     Object.defineProperty(window, 'WebSocket', { configurable: true, value: FakeWebSocket });
     testWindow.__k0nnectDropSocket = () => FakeWebSocket.active?.close(1012, 'Falha transitória');
-  });
+  }, REALTIME_PROTOCOL_VERSION);
 }
 
 async function mockApi(page: Page): Promise<{ create: number; publish: number }> {
@@ -351,7 +366,29 @@ async function mockApi(page: Page): Promise<{ create: number; publish: number }>
             channels: [
               { id: 'room_general', slug: 'geral', name: 'Geral', kind: 'voice', position: 0 },
             ],
-            members: [{ id: USER.id, displayName: USER.displayName, role: USER.role }],
+            members: [
+              {
+                id: USER.id,
+                username: USER.username,
+                displayName: USER.displayName,
+                role: USER.role,
+              },
+            ],
+            friends: [],
+            friendRequests: [],
+            conversations: [
+              {
+                id: 'group_k0sec',
+                kind: 'group',
+                spaceKind: 'community',
+                name: 'K0Sec',
+                ownerUserId: null,
+                callRoomId: 'room_general',
+                isDefault: true,
+                members: [{ id: USER.id, username: USER.username, displayName: USER.displayName }],
+                lastMessage: null,
+              },
+            ],
             capabilities: { manageInvites: false },
           }
         : {
@@ -373,6 +410,8 @@ async function mockApi(page: Page): Promise<{ create: number; publish: number }>
       data = { loggedOut: true };
     } else if (path === '/api/auth/sessions') {
       data = { sessions: [] };
+    } else if (path.startsWith('/api/social/conversations/') && path.endsWith('/messages')) {
+      data = { messages: [] };
     } else if (path === '/api/realtime/session') {
       const realtimeRequest = request.postDataJSON() as {
         action: string;
@@ -441,14 +480,17 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(page.getByText('Códigos copiados')).toBeVisible();
   await page.getByRole('button', { name: 'Já guardei em segurança' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Geral' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Amigos', level: 1 })).toBeVisible();
+  await page.getByRole('button', { name: 'K0Sec' }).click();
+  await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
   await expect(page.getByText('Alice (você)').first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Mostrar participantes' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Mostrar membros' })).toBeVisible();
   await page.setViewportSize({ width: 1024, height: 768 });
-  await expect(page.getByRole('button', { name: 'Mostrar participantes' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mostrar membros' })).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 720 });
-  await expect(page.getByRole('button', { name: 'Mostrar participantes' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Entrar na voz' }).click();
+  await expect(page.getByRole('button', { name: 'Mostrar membros' })).toBeVisible();
+  await expect.poll(() => pageErrors).toEqual([]);
+  await page.getByRole('button', { name: 'Geral' }).click();
   await expect(page.getByRole('button', { name: 'Desativar microfone' })).toBeVisible();
   await page.getByRole('button', { name: 'Ativar câmera' }).click();
   await expect(page.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
@@ -571,7 +613,7 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
     'false',
   );
   await page.getByRole('button', { name: 'Desconectar' }).click();
-  await expect(page.getByRole('button', { name: 'Entrar na voz' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Amigos', level: 1 })).toBeVisible();
   await page.getByRole('button', { name: 'Sair da conta' }).click();
   await expect(page.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeVisible();
   expect(
@@ -584,5 +626,5 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await page.getByLabel('Usuário').fill('alice');
   await page.getByLabel('Senha').fill('uma-senha-segura-e-longa');
   await page.getByRole('button', { name: 'Entrar no k0nnect' }).click();
-  await expect(page.getByRole('heading', { name: 'Geral' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Amigos', level: 1 })).toBeVisible();
 });

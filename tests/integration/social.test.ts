@@ -94,6 +94,62 @@ describe('social, grupos e chat persistente', () => {
     expect(aliceBootstrap.friendRequests).toEqual([]);
   });
 
+  it('expõe call efêmera para DM sem transformar a conversa em espaço', async () => {
+    const alice = await createAccount('alice', 'Alice');
+    const bob = await createAccount('bob', 'Bob');
+    await becomeFriends(alice, bob);
+    const conversationId = `dm_${'a'.repeat(64)}`;
+    const now = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO conversations (
+           id, kind, space_kind, name, owner_user_id, dm_pair_key, call_room_id,
+           is_default, created_at, updated_at
+         ) VALUES (?, 'dm', NULL, NULL, NULL, ?, NULL, 0, ?, ?)`,
+      ).bind(conversationId, `${alice.user.id}:${bob.user.id}`, now, now),
+      env.DB.prepare(
+        `INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at)
+         VALUES (?, ?, 'member', ?)`,
+      ).bind(conversationId, alice.user.id, now),
+      env.DB.prepare(
+        `INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at)
+         VALUES (?, ?, 'member', ?)`,
+      ).bind(conversationId, bob.user.id, now),
+    ]);
+
+    const conversation = (await bootstrap(alice)).conversations.find(
+      (item) => item.id === conversationId,
+    );
+    expect(conversation).toEqual(
+      expect.objectContaining({
+        kind: 'dm',
+        spaceKind: null,
+        callRoomId: `dmcall_${'a'.repeat(57)}`,
+      }),
+    );
+  });
+
+  it('impede a criação de outra comunidade no banco', async () => {
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO rooms (id, slug, name, kind, position, created_at)
+       VALUES ('room_fake_community', 'fake-community', 'Fake', 'voice', 0, ?)`,
+    )
+      .bind(now)
+      .run();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO conversations (
+           id, kind, space_kind, name, owner_user_id, dm_pair_key, call_room_id,
+           is_default, created_at, updated_at
+         ) VALUES ('group_fake_community', 'group', 'community', 'Fake', NULL, NULL,
+           'room_fake_community', 0, ?, ?)`,
+      )
+        .bind(now, now)
+        .run(),
+    ).rejects.toThrow();
+  });
+
   it('recusa amizade própria, duplicada, inversa e aceite por quem enviou', async () => {
     const alice = await createAccount('alice', 'Alice');
     const bob = await createAccount('bob', 'Bob');

@@ -258,6 +258,8 @@ function ChannelSidebar({
   onLogout,
   conversations,
   selectedConversation,
+  members,
+  onlineUserIds,
   navigationContext,
   onHomeSelect,
   onHomeConversationSelect,
@@ -272,6 +274,8 @@ function ChannelSidebar({
   | 'onLogout'
   | 'conversations'
   | 'selectedConversation'
+  | 'members'
+  | 'onlineUserIds'
   | 'navigationContext'
   | 'onHomeSelect'
   | 'onHomeConversationSelect'
@@ -322,10 +326,10 @@ function ChannelSidebar({
                 </button>
               ))}
           </>
-        ) : (
+        ) : selectedConversation?.spaceKind === 'community' ? (
           <>
             <div className="channel-category">
-              <span>Chat</span>
+              <span>Texto</span>
             </div>
             <button className="voice-channel is-active" type="button">
               <span aria-hidden="true">#</span>
@@ -334,7 +338,7 @@ function ChannelSidebar({
             {selectedConversation?.callRoomId && (
               <>
                 <div className="channel-category">
-                  <span>Call</span>
+                  <span>Voz</span>
                 </div>
                 <button
                   className={`voice-channel voice-channel-call ${voice.status !== 'idle' ? 'is-active' : ''}`}
@@ -350,20 +354,43 @@ function ChannelSidebar({
                     {voice.status === 'recovering' && <small>Recuperando…</small>}
                   </span>
                 </button>
+                <div className="channel-members">
+                  {participants
+                    .filter(
+                      (participant) => participant.channelId === selectedConversation.callRoomId,
+                    )
+                    .map((participant) => (
+                      <ParticipantLine
+                        key={participant.userId}
+                        participant={participant}
+                        userId={user.id}
+                        publications={publications}
+                      />
+                    ))}
+                </div>
               </>
             )}
           </>
+        ) : (
+          <div className="private-group-sidebar" aria-label="Membros do grupo">
+            <span>{members.length} membros</span>
+            <div>
+              {members.map((member) => (
+                <div className="private-group-member" key={member.id}>
+                  <Avatar
+                    displayName={member.displayName}
+                    state={onlineUserIds.includes(member.id) ? 'online' : 'offline'}
+                    size="small"
+                  />
+                  <span>
+                    <strong>{member.displayName}</strong>
+                    <small>@{member.username}</small>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
-        <div className="channel-members">
-          {participants.map((participant) => (
-            <ParticipantLine
-              key={participant.userId}
-              participant={participant}
-              userId={user.id}
-              publications={publications}
-            />
-          ))}
-        </div>
       </nav>
       <div className="channel-sidebar-spacer" />
       <VoiceConnectionPanel roomName={roomName} voice={voice} />
@@ -378,6 +405,7 @@ function MemberSidebar({
   participants,
   publications,
   userId,
+  callPresenceLabel,
   open,
   onClose,
 }: {
@@ -386,6 +414,7 @@ function MemberSidebar({
   participants: RoomParticipant[];
   publications: MediaPublication[];
   userId: string;
+  callPresenceLabel: string;
   open: boolean;
   onClose(): void;
 }) {
@@ -425,7 +454,7 @@ function MemberSidebar({
                       ? 'Microfone desativado'
                       : state === 'deafened'
                         ? 'Áudio desativado'
-                        : 'Em Geral'
+                        : callPresenceLabel
                   : online
                     ? 'Online'
                     : 'Offline'}
@@ -486,7 +515,7 @@ export function AppShell(props: AppShellProps) {
               }
               onClick={() => props.onGroupConversationSelect(conversation.id)}
             >
-              {conversation.isDefault ? (
+              {conversation.spaceKind === 'community' ? (
                 <img src="/brand/k0sec-logo.png" alt="" />
               ) : (
                 <span className="rail-group-initial" aria-hidden="true">
@@ -516,6 +545,8 @@ export function AppShell(props: AppShellProps) {
         onLogout={props.onLogout}
         conversations={props.conversations}
         selectedConversation={props.selectedConversation}
+        members={props.members}
+        onlineUserIds={props.onlineUserIds}
         navigationContext={props.navigationContext}
         onHomeSelect={props.onHomeSelect}
         onHomeConversationSelect={props.onHomeConversationSelect}
@@ -528,6 +559,12 @@ export function AppShell(props: AppShellProps) {
         participants={props.participants}
         publications={props.publications}
         userId={props.user.id}
+        callPresenceLabel={
+          props.navigationContext === 'group' &&
+          props.selectedConversation?.spaceKind === 'community'
+            ? 'Em Geral'
+            : 'Em chamada'
+        }
         open={props.membersOpen}
         onClose={() => props.onMembersOpenChange(false)}
       />

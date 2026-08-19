@@ -166,12 +166,12 @@ export async function renameGroup(
   const results = await env.DB.batch([
     env.DB.prepare(
       `UPDATE conversations SET name = ?, updated_at = ?
-       WHERE id = ? AND kind = 'group' AND is_default = 0 AND owner_user_id = ?`,
+       WHERE id = ? AND kind = 'group' AND space_kind = 'group' AND owner_user_id = ?`,
     ).bind(name, now, conversationId, ownerId),
     env.DB.prepare(
       `UPDATE rooms SET name = ? WHERE id = (
          SELECT call_room_id FROM conversations
-         WHERE id = ? AND kind = 'group' AND is_default = 0 AND owner_user_id = ?
+         WHERE id = ? AND kind = 'group' AND space_kind = 'group' AND owner_user_id = ?
        )`,
     ).bind(name, conversationId, ownerId),
   ]);
@@ -195,7 +195,7 @@ async function requireGroupOwner(database: D1Database, conversationId: string, o
   const group = await database
     .prepare(
       `SELECT id FROM conversations
-       WHERE id = ? AND kind = 'group' AND is_default = 0 AND owner_user_id = ?`,
+       WHERE id = ? AND kind = 'group' AND space_kind = 'group' AND owner_user_id = ?`,
     )
     .bind(conversationId, ownerId)
     .first<{ id: string }>();
@@ -298,7 +298,10 @@ export async function leaveGroup(
     `UPDATE conversation_members SET removed_at = ?
      WHERE conversation_id = ? AND user_id = ? AND member_role = 'member'
        AND removed_at IS NULL
-       AND EXISTS (SELECT 1 FROM conversations WHERE id = ? AND is_default = 0)`,
+       AND EXISTS (
+         SELECT 1 FROM conversations
+         WHERE id = ? AND kind = 'group' AND space_kind = 'group'
+       )`,
   )
     .bind(new Date().toISOString(), conversationId, userId, conversationId)
     .run();

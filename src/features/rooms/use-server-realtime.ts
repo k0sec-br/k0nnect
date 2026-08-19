@@ -205,7 +205,12 @@ export function useServerRealtime(
             return;
           }
           if (realtimeMessage.type === 'call.joined') {
-            setParticipants(realtimeMessage.payload.participants);
+            setParticipants((current) => [
+              ...current.filter(
+                (participant) => participant.channelId !== realtimeMessage.payload.channelId,
+              ),
+              ...realtimeMessage.payload.participants,
+            ]);
             setPublications(realtimeMessage.payload.publications);
             settleCommand(realtimeMessage.payload.requestId);
             return;

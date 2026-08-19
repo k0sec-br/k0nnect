@@ -182,10 +182,7 @@ export class ServerRealtime extends DurableObject<Env> {
       ...(attachment.channelId ? [`channel:${attachment.channelId}`] : []),
     ]);
     await this.ensureAlarm();
-    const snapshot = await this.snapshot(
-      undefined,
-      attachment.channelId ? [attachment.channelId] : [],
-    );
+    const snapshot = await this.snapshotForAttachment(attachment);
 
     this.send(server, {
       v: REALTIME_PROTOCOL_VERSION,
@@ -283,7 +280,7 @@ export class ServerRealtime extends DurableObject<Env> {
       this.send(socket, {
         v: REALTIME_PROTOCOL_VERSION,
         type: 'state.snapshot',
-        payload: await this.snapshot(undefined, attachment.channelId ? [attachment.channelId] : []),
+        payload: await this.snapshotForAttachment(attachment),
       });
       return;
     }
@@ -664,7 +661,7 @@ export class ServerRealtime extends DurableObject<Env> {
     socket.serializeAttachment(attachment);
 
     if (newlyJoined) {
-      this.broadcastToCallRoom(
+      this.broadcastToCallScope(
         channelId,
         {
           v: REALTIME_PROTOCOL_VERSION,
@@ -722,7 +719,7 @@ export class ServerRealtime extends DurableObject<Env> {
     void socket;
     this.ctx.waitUntil(this.cleanupRealtime(departing));
     this.broadcastUnpublished(departing, reason);
-    this.broadcastToCallRoom(attachment.channelId, {
+    this.broadcastToCallScope(attachment.channelId, {
       v: REALTIME_PROTOCOL_VERSION,
       type: 'call.member.left',
       payload: {
@@ -1263,6 +1260,22 @@ export class ServerRealtime extends DurableObject<Env> {
     return { onlineUserIds, participants, publications };
   }
 
+  private async snapshotForAttachment(attachment: ConnectionAttachment): Promise<{
+    onlineUserIds: string[];
+    participants: CallParticipant[];
+    publications: MediaPublication[];
+  }> {
+    const availableCalls = await this.snapshot(undefined, attachment.callRoomIds);
+    const activeCall = attachment.channelId
+      ? await this.snapshot(attachment.channelId)
+      : { publications: [] as MediaPublication[] };
+    return {
+      onlineUserIds: availableCalls.onlineUserIds,
+      participants: availableCalls.participants,
+      publications: activeCall.publications,
+    };
+  }
+
   private async userIsOnline(userId: string, excludedConnectionId?: string): Promise<boolean> {
     for (const socket of this.ctx.getWebSockets(`user:${userId}`)) {
       if (socket.readyState !== WebSocket.OPEN) continue;
@@ -1491,6 +1504,18 @@ export class ServerRealtime extends DurableObject<Env> {
       if (socket === excludedSocket) continue;
       const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
       if (attachment?.channelId === channelId) this.send(socket, message);
+    }
+  }
+
+  private broadcastToCallScope(
+    channelId: string,
+    message: ServerRoomMessage,
+    excludedSocket?: WebSocket,
+  ): void {
+    for (const socket of this.ctx.getWebSockets()) {
+      if (socket === excludedSocket) continue;
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      if (attachment?.callRoomIds.includes(channelId)) this.send(socket, message);
     }
   }
 

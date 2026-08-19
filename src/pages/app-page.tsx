@@ -97,6 +97,20 @@ export function AppPage() {
     (media) => media.publication.kind === 'video',
   );
   const showCallPanel = shouldShowCallPanel(voice.status, callPanelDismissed);
+  const selectedCallRoomId = directRecipient ? null : call.selectedConversation?.callRoomId;
+  const selectedCallParticipants = socket.participants
+    .filter((participant) => participant.channelId === selectedCallRoomId)
+    .flatMap((participant) => {
+      const member = call.selectedConversation?.members.find(
+        (candidate) => candidate.id === participant.userId,
+      );
+      return member ? [member] : [];
+    });
+  const selectedCallActive = Boolean(
+    voice.status !== 'idle' &&
+    call.callConversation?.id === call.selectedConversation?.id &&
+    selectedCallRoomId,
+  );
 
   function selectHomeConversation(conversationId: string) {
     call.selectConversation(conversationId);
@@ -195,8 +209,12 @@ export function AppPage() {
             isHistoryLoaded={socket.isHistoryLoaded}
             subscribeChat={socket.subscribeChat}
             canJoinCall={Boolean(
-              socket.connectionId && config?.realtimeEnabled && voice.status === 'idle',
+              socket.connectionId &&
+              config?.realtimeEnabled &&
+              (voice.status === 'idle' || selectedCallActive),
             )}
+            callActive={selectedCallActive}
+            callParticipants={selectedCallParticipants}
             canSend={canSendMessage}
             friends={call.friends}
             onOpenChannels={() => setChannelsOpen(true)}
@@ -224,7 +242,9 @@ export function AppPage() {
         {voice.status !== 'idle' && videoMedia && (
           <aside className="global-call-stage" aria-label="Chamada em andamento">
             <MediaRoomView
-              participants={socket.participants}
+              participants={socket.participants.filter(
+                (participant) => participant.channelId === room?.id,
+              )}
               userId={user.id}
               localMedia={voice.localMedia}
               remoteMedia={voice.remoteMedia}
@@ -234,8 +254,19 @@ export function AppPage() {
         {showCallPanel && room && (
           <div className="global-call-bar">
             <div>
-              <strong>{call.callConversation?.name ?? room.name}</strong>
-              <span>{callStatusLabel(voice.status)}</span>
+              <strong>
+                {call.callConversation?.kind === 'dm'
+                  ? `@${call.callConversation.members.find((member) => member.id !== user.id)?.username ?? 'unknown'}`
+                  : (call.callConversation?.name ?? room.name)}
+              </strong>
+              <span>
+                {call.callConversation?.spaceKind === 'community'
+                  ? 'Geral'
+                  : call.callConversation?.spaceKind === 'group'
+                    ? 'Chamada do grupo'
+                    : 'Chamada'}{' '}
+                · {callStatusLabel(voice.status)}
+              </span>
             </div>
             <IconButton
               label="Ocultar painel da chamada"

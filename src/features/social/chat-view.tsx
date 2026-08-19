@@ -22,9 +22,9 @@ import {
   MenuIcon,
   MoreIcon,
   PencilIcon,
+  PhoneIcon,
   TrashIcon,
   UsersIcon,
-  VolumeIcon,
 } from '../../components/icons';
 import { apiClient } from '../../lib/api-client';
 import { chatAuthorUsername } from './chat-author';
@@ -39,6 +39,8 @@ interface ChatViewProps {
   isHistoryLoaded(conversationId: string | null): boolean;
   subscribeChat(conversationId: string | null, listener: () => void): () => void;
   canJoinCall: boolean;
+  callActive: boolean;
+  callParticipants: SocialUserView[];
   canSend: boolean;
   friends: FriendView[];
   onOpenChannels(): void;
@@ -110,6 +112,7 @@ export function ChatView(props: ChatViewProps) {
   const [editingContent, setEditingContent] = useState('');
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<number | null>(null);
   const [mobileMenuMessageId, setMobileMenuMessageId] = useState<number | null>(null);
+  const [ignoredCallRoomId, setIgnoredCallRoomId] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const editInputRef = useRef<HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -118,7 +121,14 @@ export function ChatView(props: ChatViewProps) {
   const preserveScrollHeightRef = useRef<number | null>(null);
   const onMessagesLoadedRef = useRef(props.onMessagesLoaded);
   onMessagesLoadedRef.current = props.onMessagesLoaded;
-  const title = props.conversation?.name ?? props.recipient?.displayName ?? 'Conversa';
+  const peer = props.conversation?.members.find((member) => member.id !== props.currentUserId);
+  const title =
+    props.conversation?.kind === 'dm'
+      ? `@${peer?.username ?? 'unknown'}`
+      : (props.conversation?.name ??
+        (props.recipient ? `@${props.recipient.username}` : 'Conversa'));
+  const communityConversation = props.conversation?.spaceKind === 'community';
+  const privateCallAvailable = Boolean(props.conversation?.callRoomId && !communityConversation);
   const conversationId = props.conversation?.id;
   const cacheId = conversationId ?? (props.recipient ? `pending_${props.recipient.id}` : null);
   const getMessages = props.getMessages;
@@ -182,6 +192,10 @@ export function ChatView(props: ChatViewProps) {
     input?.focus();
     input?.setSelectionRange(input.value.length, input.value.length);
   }, [editingMessageId]);
+
+  useEffect(() => {
+    if (props.callParticipants.length === 0) setIgnoredCallRoomId(null);
+  }, [props.callParticipants.length]);
 
   async function loadOlder() {
     if (!conversationId || loadingOlder) return;
@@ -276,24 +290,26 @@ export function ChatView(props: ChatViewProps) {
           <MenuIcon aria-hidden="true" />
         </button>
         <div className="main-header-title">
-          <span aria-hidden="true">#</span>
+          {communityConversation && <span aria-hidden="true">#</span>}
           <h1 id="chat-title">{title}</h1>
         </div>
         {props.conversation?.callRoomId && (
           <div className="chat-header-actions">
-            {!props.conversation.isDefault && (
+            {props.conversation.spaceKind === 'group' && (
               <button className="button ghost" type="button" onClick={() => setManagingGroup(true)}>
                 Configurar grupo
               </button>
             )}
-            <button
-              className="button ghost chat-call-button"
-              type="button"
-              onClick={props.onUseGroupCall}
-              disabled={!props.canJoinCall}
-            >
-              <VolumeIcon aria-hidden="true" /> Usar chamada do grupo
-            </button>
+            {privateCallAvailable && (
+              <IconButton
+                label={props.callActive ? 'Mostrar chamada' : 'Iniciar ou entrar na chamada'}
+                className="chat-call-button"
+                onClick={props.onUseGroupCall}
+                disabled={!props.canJoinCall}
+              >
+                <PhoneIcon aria-hidden="true" />
+              </IconButton>
+            )}
           </div>
         )}
         <button
@@ -305,6 +321,34 @@ export function ChatView(props: ChatViewProps) {
           <UsersIcon aria-hidden="true" />
         </button>
       </header>
+      {privateCallAvailable &&
+        !props.callActive &&
+        props.callParticipants.length > 0 &&
+        ignoredCallRoomId !== props.conversation?.callRoomId && (
+          <section className="ephemeral-call-banner" aria-label="Chamada em andamento">
+            <div>
+              <strong>Chamada em andamento</strong>
+              <span>
+                {props.callParticipants.map((participant) => participant.displayName).join(', ')}
+              </span>
+            </div>
+            <button
+              className="button primary"
+              type="button"
+              disabled={!props.canJoinCall}
+              onClick={props.onUseGroupCall}
+            >
+              Entrar
+            </button>
+            <button
+              className="button ghost"
+              type="button"
+              onClick={() => setIgnoredCallRoomId(props.conversation?.callRoomId ?? null)}
+            >
+              Ignorar
+            </button>
+          </section>
+        )}
       <div
         className="message-list"
         aria-live="polite"
