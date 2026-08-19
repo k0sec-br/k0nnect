@@ -23,6 +23,42 @@ export interface RoomView {
   position: number;
 }
 
+export interface ServerView {
+  id: string;
+  name: string;
+}
+
+export interface MemberView {
+  id: string;
+  displayName: string;
+  role: UserRole;
+}
+
+export interface PublicConfig {
+  registrationMode: 'disabled' | 'invite' | 'public';
+  realtimeEnabled: boolean;
+  turnstileEnabled: boolean;
+  turnstileSiteKey: string | null;
+}
+
+export type BootstrapView =
+  | {
+      authenticated: false;
+      config: PublicConfig;
+    }
+  | {
+      authenticated: true;
+      config: PublicConfig;
+      user: SessionUser;
+      csrfToken: string;
+      server: ServerView;
+      channels: RoomView[];
+      members: MemberView[];
+      capabilities: {
+        manageInvites: boolean;
+      };
+    };
+
 export interface InviteView {
   id: string;
   role: Exclude<UserRole, 'owner'>;

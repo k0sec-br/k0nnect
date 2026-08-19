@@ -35,6 +35,25 @@ export async function enforceRateLimit(
   return decision;
 }
 
+export async function enforceRateLimits(
+  env: Env,
+  actor: string,
+  policies: RateLimitPolicy[],
+): Promise<RateLimitDecision[]> {
+  if (!env.PASSWORD_PEPPER || !env.SECURITY_GATES) throw new AppError('INTERNAL_ERROR', 503);
+  const actorHash = await keyedIdentifierHash(actor, env.PASSWORD_PEPPER);
+  const decisions = await env.SECURITY_GATES.getByName(actorHash).consumeMany(
+    policies.map((policy) => ({
+      policy: policy.name,
+      limit: policy.limit,
+      windowSeconds: policy.windowSeconds,
+    })),
+  );
+  const blocked = decisions.find((decision) => !decision.allowed);
+  if (blocked) throw new AppError('RATE_LIMITED', 429, blocked.retryAfter);
+  return decisions;
+}
+
 export function requestIp(request: Request): string {
   return request.headers.get('CF-Connecting-IP') ?? 'local-development';
 }

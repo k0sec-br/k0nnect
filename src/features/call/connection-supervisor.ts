@@ -21,7 +21,7 @@ export type RecoveryReason =
   | 'control-operation-pending'
   | 'visibility-restored'
   | 'page-resumed'
-  | 'watchdog';
+  | 'recovery-retry';
 
 export interface ConnectionHealth {
   active: boolean;
@@ -162,7 +162,7 @@ export class ConnectionSupervisor {
   }
 
   private async runRecovery(generation: number): Promise<void> {
-    const reason = this.pendingReason ?? 'watchdog';
+    const reason = this.pendingReason ?? 'recovery-retry';
     const silentRecovery = reason === 'control-operation-pending';
     this.pendingReason = null;
     const currentState = deriveCallConnectionState(this.health);

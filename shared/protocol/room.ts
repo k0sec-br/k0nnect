@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const ROOM_PROTOCOL_VERSION = 3 as const;
+export const REALTIME_PROTOCOL_VERSION = 4 as const;
 
 export const MEDIA_SOURCES = ['microphone', 'camera', 'screen-video', 'screen-audio'] as const;
 export const mediaSourceSchema = z.enum(MEDIA_SOURCES);
@@ -29,65 +29,132 @@ export const mediaPublicationSchema = z.object({
 
 export type MediaPublication = z.infer<typeof mediaPublicationSchema>;
 
-export const roomParticipantSchema = z.object({
+export const callParticipantSchema = z.object({
   userId: z.string().uuid(),
-  displayName: z.string().min(1).max(40),
+  channelId: z.string().min(1).max(64),
   muted: z.boolean(),
   deafened: z.boolean(),
   speaking: z.boolean(),
 });
 
-export type RoomParticipant = z.infer<typeof roomParticipantSchema>;
+export type CallParticipant = z.infer<typeof callParticipantSchema>;
+export type RoomParticipant = CallParticipant & { displayName: string };
+
+const requestIdSchema = z.string().uuid();
+const channelIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9_-]+$/u);
 
 export const clientRoomMessageSchema = z.discriminatedUnion('type', [
   z.object({
-    v: z.literal(ROOM_PROTOCOL_VERSION),
+    v: z.literal(REALTIME_PROTOCOL_VERSION),
+    type: z.literal('call.join'),
+    payload: z.object({ channelId: channelIdSchema, requestId: requestIdSchema }).strict(),
+  }),
+  z.object({
+    v: z.literal(REALTIME_PROTOCOL_VERSION),
+    type: z.literal('call.takeover'),
+    payload: z.object({ channelId: channelIdSchema, requestId: requestIdSchema }).strict(),
+  }),
+  z.object({
+    v: z.literal(REALTIME_PROTOCOL_VERSION),
+    type: z.literal('call.leave'),
+    payload: z.object({ requestId: requestIdSchema }).strict(),
+  }),
+  z.object({
+    v: z.literal(REALTIME_PROTOCOL_VERSION),
     type: z.literal('member.updated'),
     payload: z.object({ muted: z.boolean(), deafened: z.boolean() }).strict(),
   }),
   z.object({
-    v: z.literal(ROOM_PROTOCOL_VERSION),
+    v: z.literal(REALTIME_PROTOCOL_VERSION),
     type: z.literal('voice.speaking'),
     payload: z.object({ speaking: z.boolean() }).strict(),
   }),
   z.object({
-    v: z.literal(ROOM_PROTOCOL_VERSION),
-    type: z.literal('heartbeat'),
-    payload: z
-      .object({
-        visibility: z.enum(['foreground', 'background']).optional(),
-        connectionEpoch: z.number().int().positive().optional(),
-      })
-      .strict(),
+    v: z.literal(REALTIME_PROTOCOL_VERSION),
+    type: z.literal('state.resync'),
+    payload: z.object({}).strict(),
   }),
 ]);
 
 export type ClientRoomMessage = z.infer<typeof clientRoomMessageSchema>;
 
-const serverEnvelope = { v: z.literal(ROOM_PROTOCOL_VERSION) };
+const serverEnvelope = { v: z.literal(REALTIME_PROTOCOL_VERSION) };
+
+const ephemeralSnapshotSchema = z.object({
+  onlineUserIds: z.array(z.string().uuid()),
+  participants: z.array(callParticipantSchema),
+  publications: z.array(mediaPublicationSchema),
+});
 
 export const serverRoomMessageSchema = z.discriminatedUnion('type', [
   z.object({
     ...serverEnvelope,
-    type: z.literal('room.ready'),
-    payload: z.object({
+    type: z.literal('server.ready'),
+    payload: ephemeralSnapshotSchema.extend({
       connectionId: z.string().uuid(),
-      callInstanceId: z.string().uuid(),
       connectionEpoch: z.number().int().positive(),
       resumed: z.boolean(),
-      participants: z.array(roomParticipantSchema),
-      publications: z.array(mediaPublicationSchema),
     }),
   }),
   z.object({
     ...serverEnvelope,
-    type: z.enum(['member.joined', 'member.updated']),
-    payload: roomParticipantSchema,
+    type: z.literal('state.snapshot'),
+    payload: ephemeralSnapshotSchema,
   }),
   z.object({
     ...serverEnvelope,
-    type: z.literal('member.left'),
-    payload: z.object({ userId: z.string().uuid() }),
+    type: z.literal('presence.changed'),
+    payload: z.object({ userId: z.string().uuid(), online: z.boolean() }).strict(),
+  }),
+  z.object({
+    ...serverEnvelope,
+    type: z.literal('call.joined'),
+    payload: ephemeralSnapshotSchema.pick({ participants: true, publications: true }).extend({
+      channelId: channelIdSchema,
+      requestId: requestIdSchema,
+    }),
+  }),
+  z.object({
+    ...serverEnvelope,
+    type: z.literal('call.conflict'),
+    payload: z.object({ channelId: channelIdSchema, requestId: requestIdSchema }).strict(),
+  }),
+  z.object({
+    ...serverEnvelope,
+    type: z.literal('call.replaced'),
+    payload: z.object({ channelId: channelIdSchema }).strict(),
+  }),
+  z.object({
+    ...serverEnvelope,
+    type: z.literal('call.left'),
+    payload: z.object({ requestId: requestIdSchema }).strict(),
+  }),
+  z.object({
+    ...serverEnvelope,
+    type: z.enum(['call.member.joined', 'call.member.updated']),
+    payload: callParticipantSchema,
+  }),
+  z.object({
+    ...serverEnvelope,
+    type: z.literal('call.member.left'),
+    payload: z.object({
+      userId: z.string().uuid(),
+      channelId: channelIdSchema,
+      requestId: requestIdSchema.optional(),
+    }),
+  }),
+  z.object({
+    ...serverEnvelope,
+    type: z.enum(['member.added', 'member.updated', 'member.removed']),
+    payload: z.object({
+      id: z.string().uuid(),
+      displayName: z.string().min(1).max(40),
+      role: z.enum(['owner', 'admin', 'member']),
+    }),
   }),
   z.object({
     ...serverEnvelope,
@@ -111,18 +178,11 @@ export const serverRoomMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...serverEnvelope,
-    type: z.literal('connection.restored'),
-    payload: z.object({ connectionEpoch: z.number().int().positive() }).strict(),
-  }),
-  z.object({
-    ...serverEnvelope,
-    type: z.literal('heartbeat.ack'),
-    payload: z.object({ serverTime: z.number().int().nonnegative() }).strict(),
-  }),
-  z.object({
-    ...serverEnvelope,
     type: z.literal('error'),
-    payload: z.object({ message: z.string().min(1).max(160) }),
+    payload: z.object({
+      message: z.string().min(1).max(160),
+      requestId: requestIdSchema.optional(),
+    }),
   }),
 ]);
 

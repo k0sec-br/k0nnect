@@ -1,0 +1,386 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import {
+  REALTIME_PROTOCOL_VERSION,
+  serverRoomMessageSchema,
+  type CallParticipant,
+  type ClientRoomMessage,
+  type MediaPublication,
+} from '../../../shared/protocol/room';
+import type { MemberView } from '../../../shared/types/api';
+import { incrementDevelopmentMetric } from '../../lib/development-metrics';
+
+export type RealtimeConnectionState =
+  'connected' | 'connecting' | 'disconnected' | 'offline' | 'reconnecting';
+
+interface LogicalConnection {
+  connectionEpoch: number;
+  connectionId: string;
+}
+
+interface PendingCommand {
+  reject(error: Error): void;
+  resolve(): void;
+  timer: number;
+}
+
+const SOCKET_READY_TIMEOUT_MS = 10_000;
+const COMMAND_TIMEOUT_MS = 8_000;
+
+export class CallConflictError extends Error {
+  override name = 'CallConflictError';
+}
+
+export function shouldReconnectServerSocket(closeCode: number): boolean {
+  return closeCode !== 1000 && closeCode !== 4003;
+}
+
+export function useServerRealtime(
+  serverId: string | null,
+  userId: string | null,
+  onMemberEvent: (
+    type: 'member.added' | 'member.updated' | 'member.removed',
+    member: MemberView,
+  ) => void,
+) {
+  const activeRef = useRef(false);
+  const connectRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
+  const logicalConnectionRef = useRef<LogicalConnection | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const transportGenerationRef = useRef(0);
+  const pendingCommandsRef = useRef(new Map<string, PendingCommand>());
+  const [connectionId, setConnectionId] = useState<string | null>(null);
+  const [participants, setParticipants] = useState<CallParticipant[]>([]);
+  const [publications, setPublications] = useState<MediaPublication[]>([]);
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
+  const [connectionState, setConnectionState] = useState<RealtimeConnectionState>('offline');
+  const [message, setMessage] = useState('');
+  const [callReplacementCount, setCallReplacementCount] = useState(0);
+
+  const settleCommand = useCallback((requestId: string, error?: Error) => {
+    const pending = pendingCommandsRef.current.get(requestId);
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingCommandsRef.current.delete(requestId);
+    if (error) pending.reject(error);
+    else pending.resolve();
+  }, []);
+
+  useEffect(() => {
+    if (!serverId || !userId) return;
+    activeRef.current = true;
+    const pendingCommands = pendingCommandsRef.current;
+
+    const connect = async (): Promise<boolean> => {
+      if (!activeRef.current) return false;
+      const currentSocket = socketRef.current;
+      if (currentSocket?.readyState === WebSocket.OPEN) return true;
+      if (currentSocket?.readyState === WebSocket.CONNECTING) {
+        return new Promise((resolve) => {
+          const timeout = window.setTimeout(() => resolve(false), SOCKET_READY_TIMEOUT_MS);
+          currentSocket.addEventListener(
+            'open',
+            () => {
+              window.clearTimeout(timeout);
+              resolve(true);
+            },
+            { once: true },
+          );
+          currentSocket.addEventListener(
+            'close',
+            () => {
+              window.clearTimeout(timeout);
+              resolve(false);
+            },
+            { once: true },
+          );
+        });
+      }
+
+      const generation = transportGenerationRef.current + 1;
+      transportGenerationRef.current = generation;
+      const logicalConnection = logicalConnectionRef.current;
+      if (logicalConnection) incrementDevelopmentMetric('wsReconnects');
+      const requestedEpoch = logicalConnection ? logicalConnection.connectionEpoch + 1 : 1;
+      setConnectionState(logicalConnection ? 'reconnecting' : 'connecting');
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = new URL(
+        `${protocol}//${window.location.host}/api/servers/${encodeURIComponent(serverId)}/socket`,
+      );
+      if (logicalConnection) {
+        url.searchParams.set('connectionId', logicalConnection.connectionId);
+        url.searchParams.set('connectionEpoch', String(requestedEpoch));
+      }
+      const socket = new WebSocket(url);
+      socketRef.current = socket;
+
+      return new Promise((resolve) => {
+        let settled = false;
+        const settle = (result: boolean) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeout);
+          resolve(result);
+        };
+        const timeout = window.setTimeout(() => {
+          socket.close(4000, 'Timeout de conexão');
+          settle(false);
+        }, SOCKET_READY_TIMEOUT_MS);
+
+        socket.addEventListener('message', (event) => {
+          if (generation !== transportGenerationRef.current || typeof event.data !== 'string')
+            return;
+          incrementDevelopmentMetric('wsMessagesReceived');
+          let raw: unknown;
+          try {
+            raw = JSON.parse(event.data);
+          } catch {
+            return;
+          }
+          const parsed = serverRoomMessageSchema.safeParse(raw);
+          if (!parsed.success) return;
+          const realtimeMessage = parsed.data;
+          if (realtimeMessage.type === 'server.ready') {
+            logicalConnectionRef.current = {
+              connectionEpoch: realtimeMessage.payload.connectionEpoch,
+              connectionId: realtimeMessage.payload.connectionId,
+            };
+            setConnectionId(realtimeMessage.payload.connectionId);
+            setOnlineUserIds(realtimeMessage.payload.onlineUserIds);
+            setParticipants(realtimeMessage.payload.participants);
+            setPublications(realtimeMessage.payload.publications);
+            setConnectionState('connected');
+            setMessage('');
+            settle(true);
+            return;
+          }
+          if (realtimeMessage.type === 'state.snapshot') {
+            setOnlineUserIds(realtimeMessage.payload.onlineUserIds);
+            setParticipants(realtimeMessage.payload.participants);
+            setPublications(realtimeMessage.payload.publications);
+            return;
+          }
+          if (realtimeMessage.type === 'presence.changed') {
+            setOnlineUserIds((current) =>
+              realtimeMessage.payload.online
+                ? [...new Set([...current, realtimeMessage.payload.userId])]
+                : current.filter((id) => id !== realtimeMessage.payload.userId),
+            );
+            return;
+          }
+          if (realtimeMessage.type === 'call.joined') {
+            setParticipants(realtimeMessage.payload.participants);
+            setPublications(realtimeMessage.payload.publications);
+            settleCommand(realtimeMessage.payload.requestId);
+            return;
+          }
+          if (realtimeMessage.type === 'call.conflict') {
+            settleCommand(
+              realtimeMessage.payload.requestId,
+              new CallConflictError('Esta conta já está em uma chamada em outro dispositivo.'),
+            );
+            return;
+          }
+          if (realtimeMessage.type === 'call.replaced') {
+            setParticipants((current) =>
+              current.filter((participant) => participant.userId !== userId),
+            );
+            setPublications((current) =>
+              current.filter((publication) => publication.userId !== userId),
+            );
+            setMessage('A chamada foi transferida para outra sessão desta conta.');
+            setCallReplacementCount((current) => current + 1);
+            return;
+          }
+          if (realtimeMessage.type === 'call.left') {
+            settleCommand(realtimeMessage.payload.requestId);
+            return;
+          }
+          if (
+            realtimeMessage.type === 'call.member.joined' ||
+            realtimeMessage.type === 'call.member.updated'
+          ) {
+            setParticipants((current) => [
+              ...current.filter(
+                (participant) => participant.userId !== realtimeMessage.payload.userId,
+              ),
+              realtimeMessage.payload,
+            ]);
+            return;
+          }
+          if (realtimeMessage.type === 'call.member.left') {
+            setParticipants((current) =>
+              current.filter(
+                (participant) => participant.userId !== realtimeMessage.payload.userId,
+              ),
+            );
+            setPublications((current) =>
+              current.filter(
+                (publication) => publication.userId !== realtimeMessage.payload.userId,
+              ),
+            );
+            if (realtimeMessage.payload.requestId) settleCommand(realtimeMessage.payload.requestId);
+            return;
+          }
+          if (
+            realtimeMessage.type === 'voice.speaking' ||
+            realtimeMessage.type === 'voice.stopped'
+          ) {
+            setParticipants((current) =>
+              current.map((participant) =>
+                participant.userId === realtimeMessage.payload.userId
+                  ? { ...participant, speaking: realtimeMessage.type === 'voice.speaking' }
+                  : participant,
+              ),
+            );
+            return;
+          }
+          if (realtimeMessage.type === 'media.published') {
+            setPublications((current) => [
+              ...current.filter(
+                (publication) =>
+                  publication.publicationId !== realtimeMessage.payload.publicationId,
+              ),
+              realtimeMessage.payload,
+            ]);
+            return;
+          }
+          if (realtimeMessage.type === 'media.unpublished') {
+            setPublications((current) =>
+              current.filter(
+                (publication) =>
+                  publication.publicationId !== realtimeMessage.payload.publicationId,
+              ),
+            );
+            return;
+          }
+          if (
+            realtimeMessage.type === 'member.added' ||
+            realtimeMessage.type === 'member.updated' ||
+            realtimeMessage.type === 'member.removed'
+          ) {
+            onMemberEvent(realtimeMessage.type, realtimeMessage.payload);
+            return;
+          }
+          if (realtimeMessage.type === 'error') {
+            setMessage(realtimeMessage.payload.message);
+            if (realtimeMessage.payload.requestId) {
+              settleCommand(
+                realtimeMessage.payload.requestId,
+                new Error(realtimeMessage.payload.message),
+              );
+            }
+          }
+        });
+
+        socket.addEventListener('close', (event) => {
+          if (generation !== transportGenerationRef.current) return;
+          settle(false);
+          if (!activeRef.current) return;
+          if (!shouldReconnectServerSocket(event.code)) {
+            if (event.code === 4003) {
+              logicalConnectionRef.current = null;
+              setConnectionId(null);
+              setConnectionState('offline');
+              setMessage('Sua sessão foi encerrada. Entre novamente para continuar.');
+            }
+            return;
+          }
+          setConnectionState('disconnected');
+        });
+        socket.addEventListener('error', () => socket.close(4000, 'Erro de transporte'));
+      });
+    };
+
+    connectRef.current = connect;
+    void connect();
+    return () => {
+      activeRef.current = false;
+      transportGenerationRef.current += 1;
+      socketRef.current?.close(1000, 'Saindo do servidor');
+      socketRef.current = null;
+      logicalConnectionRef.current = null;
+      setConnectionId(null);
+      for (const pending of pendingCommands.values()) {
+        window.clearTimeout(pending.timer);
+        pending.reject(new Error('Conexão encerrada.'));
+      }
+      pendingCommands.clear();
+    };
+  }, [onMemberEvent, serverId, settleCommand, userId]);
+
+  const reconcile = useCallback(async () => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) return true;
+    return connectRef.current();
+  }, []);
+
+  const sendCommand = useCallback(async (message: ClientRoomMessage, requestId: string) => {
+    if (!(await connectRef.current())) throw new Error('Conexão realtime indisponível.');
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) throw new Error('Conexão realtime indisponível.');
+    return new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        pendingCommandsRef.current.delete(requestId);
+        reject(new Error('O servidor não confirmou esta ação a tempo.'));
+      }, COMMAND_TIMEOUT_MS);
+      pendingCommandsRef.current.set(requestId, { reject, resolve, timer });
+      socket.send(JSON.stringify(message));
+      incrementDevelopmentMetric('wsMessagesSent');
+    });
+  }, []);
+
+  const joinCall = useCallback(
+    (channelId: string, takeover = false) => {
+      setMessage('');
+      const requestId = crypto.randomUUID();
+      return sendCommand(
+        {
+          v: REALTIME_PROTOCOL_VERSION,
+          type: takeover ? 'call.takeover' : 'call.join',
+          payload: { channelId, requestId },
+        },
+        requestId,
+      );
+    },
+    [sendCommand],
+  );
+
+  const leaveCall = useCallback(() => {
+    const requestId = crypto.randomUUID();
+    setParticipants((current) => current.filter((participant) => participant.userId !== userId));
+    setPublications((current) => current.filter((publication) => publication.userId !== userId));
+    return sendCommand(
+      { v: REALTIME_PROTOCOL_VERSION, type: 'call.leave', payload: { requestId } },
+      requestId,
+    );
+  }, [sendCommand, userId]);
+
+  const send = useCallback((realtimeMessage: ClientRoomMessage) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(realtimeMessage));
+      incrementDevelopmentMetric('wsMessagesSent');
+    }
+  }, []);
+
+  return {
+    callReplacementCount,
+    connectionId,
+    connectionState,
+    connectionIdentity: () => logicalConnectionRef.current,
+    joinCall,
+    leaveCall,
+    message,
+    onlineUserIds,
+    participants,
+    publications,
+    reconcile,
+    updatePresence: (muted: boolean, deafened: boolean) =>
+      send({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'member.updated',
+        payload: { muted, deafened },
+      }),
+    updateSpeaking: (speaking: boolean) =>
+      send({ v: REALTIME_PROTOCOL_VERSION, type: 'voice.speaking', payload: { speaking } }),
+  };
+}

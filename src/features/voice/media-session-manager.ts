@@ -3,13 +3,12 @@ import { apiClient } from '../../lib/api-client';
 import { NegotiationQueue } from './negotiation-queue';
 
 interface PublishResponse {
-  publication: MediaPublication;
+  publications: MediaPublication[];
   sessionDescription?: RTCSessionDescriptionInit;
 }
 
 interface SubscribeResponse {
-  publication: MediaPublication;
-  mid: string;
+  subscriptions: { publication: MediaPublication; mid: string }[];
   sessionDescription: RTCSessionDescriptionInit;
 }
 
@@ -61,39 +60,6 @@ export class MediaSessionManager {
   ) {}
 
   async start(deviceId?: string, existingMicrophone?: MediaStreamTrack): Promise<MediaStreamTrack> {
-    const turn = await apiClient.post<{ iceServers: RTCIceServer[] }>('/api/realtime/session', {
-      action: 'turn',
-      roomId: this.roomId,
-      connectionId: this.connectionId,
-    });
-    const peerConnection = new RTCPeerConnection({
-      iceServers: turn.iceServers,
-      bundlePolicy: 'max-bundle',
-    });
-    this.peerConnection = peerConnection;
-    peerConnection.addEventListener('track', (event) => {
-      const mid = event.transceiver.mid;
-      const publication = mid ? this.remotePublicationByMid.get(mid) : undefined;
-      if (!publication) return;
-      const stream = new MediaStream([event.track]);
-      const media = { publication, stream, track: event.track };
-      this.remotePublications.set(publication.publicationId, media);
-      this.onRemoteTrack(media);
-      event.track.addEventListener(
-        'ended',
-        () => {
-          this.remotePublications.delete(publication.publicationId);
-          this.onRemoteTrackRemoved(publication.publicationId);
-        },
-        { once: true },
-      );
-    });
-    const emitConnectionSnapshot = () => this.onConnectionChange(this.connectionSnapshot());
-    peerConnection.addEventListener('connectionstatechange', emitConnectionSnapshot);
-    peerConnection.addEventListener('iceconnectionstatechange', emitConnectionSnapshot);
-    peerConnection.addEventListener('icegatheringstatechange', emitConnectionSnapshot);
-    peerConnection.addEventListener('signalingstatechange', emitConnectionSnapshot);
-
     const stream = existingMicrophone
       ? new MediaStream([existingMicrophone])
       : await navigator.mediaDevices.getUserMedia({
@@ -108,13 +74,43 @@ export class MediaSessionManager {
     const track = existingMicrophone ?? stream.getAudioTracks()[0];
     if (!track) throw new DOMException('Microfone indisponível', 'NotFoundError');
 
-    const session = await apiClient.post<{ sessionId: string }>('/api/realtime/session', {
-      action: 'create',
-      roomId: this.roomId,
-      connectionId: this.connectionId,
-    });
-    this.sessionId = session.sessionId;
     try {
+      const session = await apiClient.post<{ sessionId: string; iceServers: RTCIceServer[] }>(
+        '/api/realtime/session',
+        {
+          action: 'create',
+          roomId: this.roomId,
+          connectionId: this.connectionId,
+        },
+      );
+      const peerConnection = new RTCPeerConnection({
+        iceServers: session.iceServers,
+        bundlePolicy: 'max-bundle',
+      });
+      this.peerConnection = peerConnection;
+      this.sessionId = session.sessionId;
+      peerConnection.addEventListener('track', (event) => {
+        const mid = event.transceiver.mid;
+        const publication = mid ? this.remotePublicationByMid.get(mid) : undefined;
+        if (!publication) return;
+        const remoteStream = new MediaStream([event.track]);
+        const media = { publication, stream: remoteStream, track: event.track };
+        this.remotePublications.set(publication.publicationId, media);
+        this.onRemoteTrack(media);
+        event.track.addEventListener(
+          'ended',
+          () => {
+            this.remotePublications.delete(publication.publicationId);
+            this.onRemoteTrackRemoved(publication.publicationId);
+          },
+          { once: true },
+        );
+      });
+      const emitConnectionSnapshot = () => this.onConnectionChange(this.connectionSnapshot());
+      peerConnection.addEventListener('connectionstatechange', emitConnectionSnapshot);
+      peerConnection.addEventListener('iceconnectionstatechange', emitConnectionSnapshot);
+      peerConnection.addEventListener('icegatheringstatechange', emitConnectionSnapshot);
+      peerConnection.addEventListener('signalingstatechange', emitConnectionSnapshot);
       await this.publishTrack(track, stream, 'microphone', !existingMicrophone);
     } catch (error) {
       track.stop();
@@ -129,54 +125,83 @@ export class MediaSessionManager {
     source: MediaSource,
     stopTrackOnFailure = true,
   ): Promise<MediaPublication> {
+    return this.publishTracks([{ track, stream, source }], stopTrackOnFailure).then(
+      (publications) => publications[0]!,
+    );
+  }
+
+  publishTracks(
+    tracks: { track: MediaStreamTrack; stream: MediaStream; source: MediaSource }[],
+    stopTracksOnFailure = true,
+  ): Promise<MediaPublication[]> {
     return this.negotiationQueue.enqueue(async () => {
       const peerConnection = this.requirePeerConnection();
       const sessionId = this.requireSessionId();
-      if (this.localPublications.has(source)) {
+      if (tracks.some(({ source }) => this.localPublications.has(source))) {
         throw new DOMException('Esta mídia já está publicada', 'InvalidStateError');
       }
-      const transceiver = peerConnection.addTransceiver(track, {
-        direction: 'sendonly',
-        streams: [stream],
-        ...(source === 'camera' ? { sendEncodings: VIDEO_ENCODINGS } : {}),
-      });
+      const transceivers = tracks.map(({ track, stream, source }) =>
+        peerConnection.addTransceiver(track, {
+          direction: 'sendonly',
+          streams: [stream],
+          ...(source === 'camera' ? { sendEncodings: VIDEO_ENCODINGS } : {}),
+        }),
+      );
       try {
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         if (!offer.sdp) throw new DOMException('SDP indisponível', 'InvalidStateError');
-        const mid = transceiver.mid;
-        if (!mid) throw new DOMException('Faixa sem identificador', 'InvalidStateError');
+        const mids = transceivers.map((transceiver) => transceiver.mid);
+        if (mids.some((mid) => !mid)) {
+          throw new DOMException('Faixa sem identificador', 'InvalidStateError');
+        }
         const response = await apiClient.post<PublishResponse>('/api/realtime/session', {
           action: 'publish',
           roomId: this.roomId,
           connectionId: this.connectionId,
           sessionId,
-          source,
-          mid,
+          tracks: tracks.map(({ source }, index) => ({ source, mid: mids[index]! })),
           sessionDescription: { type: 'offer', sdp: offer.sdp },
         });
         if (response.sessionDescription) {
           await peerConnection.setRemoteDescription(response.sessionDescription);
         }
-        this.localPublications.set(source, {
-          publication: response.publication,
-          sender: transceiver.sender,
-          transceiver,
-          track,
+        if (response.publications.length !== tracks.length) {
+          throw new DOMException('Publicações incompletas', 'InvalidStateError');
+        }
+        response.publications.forEach((publication, index) => {
+          const input = tracks[index]!;
+          const transceiver = transceivers[index]!;
+          this.localPublications.set(input.source, {
+            publication,
+            sender: transceiver.sender,
+            transceiver,
+            track: input.track,
+          });
         });
-        return response.publication;
+        return response.publications;
       } catch (error) {
-        transceiver.sender.replaceTrack(null).catch(() => undefined);
-        if (stopTrackOnFailure) track.stop();
+        for (const [index, transceiver] of transceivers.entries()) {
+          transceiver.sender.replaceTrack(null).catch(() => undefined);
+          if (stopTracksOnFailure) tracks[index]?.track.stop();
+        }
         throw error;
       }
     });
   }
 
   subscribe(publication: MediaPublication): Promise<void> {
-    if (this.remotePublications.has(publication.publicationId)) return Promise.resolve();
+    return this.subscribeMany([publication]);
+  }
+
+  subscribeMany(publications: MediaPublication[]): Promise<void> {
+    const pending = publications.filter(
+      (publication) =>
+        !this.remotePublications.has(publication.publicationId) &&
+        !this.remotePublicationByMidHas(publication.publicationId),
+    );
+    if (pending.length === 0) return Promise.resolve();
     return this.negotiationQueue.enqueue(async () => {
-      if (this.remotePublicationByMidHas(publication.publicationId)) return;
       const peerConnection = this.requirePeerConnection();
       const sessionId = this.requireSessionId();
       const response = await apiClient.post<SubscribeResponse>('/api/realtime/session', {
@@ -184,10 +209,14 @@ export class MediaSessionManager {
         roomId: this.roomId,
         connectionId: this.connectionId,
         sessionId,
-        publicationId: publication.publicationId,
-        ...(publication.source === 'camera' ? { preferredRid: 'b' } : {}),
+        publicationIds: pending.map((publication) => publication.publicationId),
       });
-      this.remotePublicationByMid.set(response.mid, response.publication);
+      if (response.subscriptions.length !== pending.length) {
+        throw new DOMException('Assinaturas incompletas', 'InvalidStateError');
+      }
+      for (const subscription of response.subscriptions) {
+        this.remotePublicationByMid.set(subscription.mid, subscription.publication);
+      }
       try {
         await peerConnection.setRemoteDescription(response.sessionDescription);
         const answer = await peerConnection.createAnswer();
@@ -201,7 +230,9 @@ export class MediaSessionManager {
           sessionDescription: { type: 'answer', sdp: answer.sdp },
         });
       } catch (error) {
-        this.remotePublicationByMid.delete(response.mid);
+        for (const subscription of response.subscriptions) {
+          this.remotePublicationByMid.delete(subscription.mid);
+        }
         throw error;
       }
     });
@@ -294,10 +325,11 @@ export class MediaSessionManager {
   }
 
   async stop(): Promise<void> {
-    const sources = [...this.localPublications.keys()];
-    for (const source of sources) {
-      await this.closePublication(source, 'publisher_left').catch(() => undefined);
+    for (const publication of this.localPublications.values()) {
+      await publication.sender.replaceTrack(null).catch(() => undefined);
+      publication.track.stop();
     }
+    this.localPublications.clear();
     for (const media of this.remotePublications.values()) media.track.stop();
     this.remotePublications.clear();
     this.remotePublicationByMid.clear();

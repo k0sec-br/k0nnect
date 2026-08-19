@@ -1,4 +1,4 @@
-import type { SessionUser, UserRole } from '../../shared/types/api';
+import type { MemberView, SessionUser, UserRole } from '../../shared/types/api';
 
 export interface UserWithPassword extends SessionUser {
   passwordHash: string;
@@ -50,4 +50,20 @@ export async function findUserByUsername(
     failedLoginCount: row.failed_login_count,
     loginNotBefore: row.login_not_before,
   };
+}
+
+export async function listActiveMembers(database: D1Database): Promise<MemberView[]> {
+  const result = await database
+    .prepare(
+      `SELECT id, display_name, role
+       FROM users
+       WHERE status = 'active'
+       ORDER BY display_name COLLATE NOCASE, username COLLATE NOCASE`,
+    )
+    .all<{ id: string; display_name: string; role: UserRole }>();
+  return result.results.map((member) => ({
+    id: member.id,
+    displayName: member.display_name,
+    role: member.role,
+  }));
 }

@@ -1,5 +1,5 @@
 export { SecurityGate } from './durable/security-gate';
-export { VoiceRoom } from './durable/voice-room';
+export { ServerRealtime } from './durable/server-realtime';
 
 import { app } from './app';
 import { cleanupExpiredData } from './services/cleanup-service';

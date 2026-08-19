@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { roomSocketIsStale, type useRoomSocket } from '../rooms/use-room-socket';
+import type { useServerRealtime } from '../rooms/use-server-realtime';
 import type { useVoiceSession } from '../voice/use-voice-session';
 import {
   ConnectionSupervisor,
@@ -9,7 +9,7 @@ import {
   type RecoveryReason,
 } from './connection-supervisor';
 
-type RoomSocket = ReturnType<typeof useRoomSocket>;
+type RoomSocket = ReturnType<typeof useServerRealtime>;
 type VoiceSession = ReturnType<typeof useVoiceSession>;
 
 function socketHealthState(state: RoomSocket['connectionState']): ConnectionHealth['socketState'] {
@@ -121,30 +121,6 @@ export function useCallConnectionSupervisor({
       window.removeEventListener('pageshow', handleResume);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-    };
-  }, [active, supervisor]);
-
-  useEffect(() => {
-    if (!active) return;
-    let timer: number | null = null;
-    const watchdog = () => {
-      const currentSocket = socketRef.current;
-      const currentVoice = voiceRef.current;
-      if (
-        roomSocketIsStale(currentSocket.lastServerMessageAt(), document.visibilityState) ||
-        recoveryReason(
-          currentVoice.status,
-          currentVoice.connectionSnapshot,
-          currentVoice.reconciliationNeeded,
-        )
-      ) {
-        supervisor.requestRecovery('watchdog');
-      }
-      timer = window.setTimeout(watchdog, document.visibilityState === 'hidden' ? 45_000 : 15_000);
-    };
-    timer = window.setTimeout(watchdog, 15_000);
-    return () => {
-      if (timer !== null) window.clearTimeout(timer);
     };
   }, [active, supervisor]);
 

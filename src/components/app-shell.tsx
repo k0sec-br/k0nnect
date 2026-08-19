@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import type { MediaPublication, RoomParticipant } from '../../shared/protocol/room';
-import type { SessionUser } from '../../shared/types/api';
+import type { MemberView, SessionUser } from '../../shared/types/api';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { handleInternalLink } from '../lib/navigation';
 import { Avatar, participantState } from './avatar';
@@ -63,6 +63,8 @@ interface AppShellProps {
   user: SessionUser;
   roomName: string;
   participants: RoomParticipant[];
+  members: MemberView[];
+  onlineUserIds: string[];
   publications: MediaPublication[];
   connectionState: string;
   voice: VoiceControls;
@@ -291,65 +293,84 @@ function ChannelSidebar({
 }
 
 function MemberSidebar({
+  members,
+  onlineUserIds,
   participants,
   publications,
   userId,
   open,
   onClose,
 }: {
+  members: MemberView[];
+  onlineUserIds: string[];
   participants: RoomParticipant[];
   publications: MediaPublication[];
   userId: string;
   open: boolean;
   onClose(): void;
 }) {
+  const participantByUser = new Map(
+    participants.map((participant) => [participant.userId, participant]),
+  );
+  const onlineIds = new Set(onlineUserIds);
+  const onlineMembers = members.filter((member) => onlineIds.has(member.id));
+  const offlineMembers = members.filter((member) => !onlineIds.has(member.id));
+
+  const renderMember = (member: MemberView, online: boolean) => {
+    const participant = participantByUser.get(member.id);
+    const state = participant ? participantState(participant) : online ? 'online' : 'offline';
+    const isSharingScreen = publications.some(
+      (publication) => publication.userId === member.id && publication.source === 'screen-video',
+    );
+    const cameraActive = publications.some(
+      (publication) => publication.userId === member.id && publication.source === 'camera',
+    );
+    return (
+      <div className={`member-item ${participant?.speaking ? 'is-speaking' : ''}`} key={member.id}>
+        <Avatar displayName={member.displayName} state={state} />
+        <span>
+          <strong>
+            {member.displayName}
+            {member.id === userId ? ' (você)' : ''}
+          </strong>
+          <small>
+            {isSharingScreen
+              ? 'Compartilhando tela'
+              : cameraActive
+                ? 'Câmera ligada'
+                : participant
+                  ? state === 'speaking'
+                    ? 'Falando'
+                    : state === 'muted'
+                      ? 'Microfone desativado'
+                      : state === 'deafened'
+                        ? 'Áudio desativado'
+                        : 'Em Geral'
+                  : online
+                    ? 'Online'
+                    : 'Offline'}
+          </small>
+        </span>
+      </div>
+    );
+  };
+
   return (
     <aside className={`member-sidebar ${open ? 'is-open' : ''}`} aria-label="Participantes">
       <header className="member-sidebar-header">
-        <span>Online — {participants.length}</span>
+        <span>Online — {onlineMembers.length}</span>
         <IconButton label="Fechar participantes" className="drawer-close" onClick={onClose}>
           <CloseIcon aria-hidden="true" />
         </IconButton>
       </header>
       <div className="member-list">
-        {participants.map((participant) => {
-          const state = participantState(participant);
-          const isSharingScreen = publications.some(
-            (publication) =>
-              publication.userId === participant.userId && publication.source === 'screen-video',
-          );
-          const cameraActive = publications.some(
-            (publication) =>
-              publication.userId === participant.userId && publication.source === 'camera',
-          );
-          return (
-            <div
-              className={`member-item ${participant.speaking ? 'is-speaking' : ''}`}
-              key={participant.userId}
-            >
-              <Avatar displayName={participant.displayName} state={state} />
-              <span>
-                <strong>
-                  {participant.displayName}
-                  {participant.userId === userId ? ' (você)' : ''}
-                </strong>
-                <small>
-                  {isSharingScreen
-                    ? 'Compartilhando tela'
-                    : cameraActive
-                      ? 'Câmera ligada'
-                      : state === 'speaking'
-                        ? 'Falando'
-                        : state === 'muted'
-                          ? 'Microfone desativado'
-                          : state === 'deafened'
-                            ? 'Áudio desativado'
-                            : 'Conectado'}
-                </small>
-              </span>
-            </div>
-          );
-        })}
+        {onlineMembers.map((member) => renderMember(member, true))}
+        {offlineMembers.length > 0 && (
+          <div className="member-list-section" aria-label={`Offline — ${offlineMembers.length}`}>
+            <span>Offline — {offlineMembers.length}</span>
+          </div>
+        )}
+        {offlineMembers.map((member) => renderMember(member, false))}
       </div>
     </aside>
   );
@@ -395,6 +416,8 @@ export function AppShell(props: AppShellProps) {
       />
       <main className="app-main">{props.children}</main>
       <MemberSidebar
+        members={props.members}
+        onlineUserIds={props.onlineUserIds}
         participants={props.participants}
         publications={props.publications}
         userId={props.user.id}

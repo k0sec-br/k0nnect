@@ -7,16 +7,16 @@ import {
 } from '../../shared/constants/security';
 import {
   clientRoomMessageSchema,
-  ROOM_PROTOCOL_VERSION,
+  REALTIME_PROTOCOL_VERSION,
+  type CallParticipant,
   type MediaEndReason,
   type MediaPublication,
   type MediaSource,
-  type RoomParticipant,
   type ServerRoomMessage,
 } from '../../shared/protocol/room';
+import type { MemberView } from '../../shared/types/api';
 import { CloudflareRealtimeClient } from '../realtime/cloudflare-realtime';
 
-const SESSION_REVALIDATION_SECONDS = 60;
 const CONNECTION_RESUME_GRACE_MS = 45_000;
 const SUSPENDED_CONNECTION_PREFIX = 'suspended-connection:';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -29,12 +29,12 @@ interface PublicationRecord extends MediaPublication {
 }
 
 interface ConnectionAttachment {
-  callInstanceId: string;
+  channelId: string | null;
   connectionId: string;
   connectionEpoch: number;
   sessionId: string;
+  sessionCheckAt: number;
   userId: string;
-  displayName: string;
   muted: boolean;
   deafened: boolean;
   speaking: boolean;
@@ -42,12 +42,9 @@ interface ConnectionAttachment {
   messageWindowStartedAt: number;
   messagesInWindow: number;
   lastSpeakingUpdateAt: number;
-  lastHeartbeatAt: number;
   lifecycleHandled?: boolean;
   realtimeSessionId: string | null;
-  cleanupStarted?: boolean;
   superseded?: boolean;
-  visibility: 'foreground' | 'background';
   publications: PublicationRecord[];
   pendingClosures: PublicationRecord[];
   subscriptions: { publicationId: string; mid: string; pending?: boolean }[];
@@ -72,10 +69,11 @@ const SOURCE_KINDS: Record<MediaSource, 'audio' | 'video'> = {
   'screen-audio': 'audio',
 };
 
-function toParticipant(attachment: ConnectionAttachment): RoomParticipant {
+function toParticipant(attachment: ConnectionAttachment): CallParticipant | null {
+  if (!attachment.channelId) return null;
   return {
     userId: attachment.userId,
-    displayName: attachment.displayName,
+    channelId: attachment.channelId,
     muted: attachment.muted,
     deafened: attachment.deafened,
     speaking: attachment.speaking,
@@ -98,7 +96,7 @@ function messageSize(message: string | ArrayBuffer): number {
     : message.byteLength;
 }
 
-export class VoiceRoom extends DurableObject<Env> {
+export class ServerRealtime extends DurableObject<Env> {
   override async fetch(request: Request): Promise<Response> {
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Upgrade necessário.', { status: 426 });
@@ -106,67 +104,41 @@ export class VoiceRoom extends DurableObject<Env> {
 
     const userId = request.headers.get('X-K0nnect-User-Id');
     const sessionId = request.headers.get('X-K0nnect-Session-Id');
-    const encodedDisplayName = request.headers.get('X-K0nnect-Display-Name');
+    const sessionCheckAt = Number(request.headers.get('X-K0nnect-Session-Check-At'));
     if (
       !userId ||
       !sessionId ||
       !UUID_PATTERN.test(userId) ||
       !UUID_PATTERN.test(sessionId) ||
-      !encodedDisplayName
+      !Number.isSafeInteger(sessionCheckAt) ||
+      sessionCheckAt <= Date.now()
     ) {
       return new Response('Não autorizado.', { status: 401 });
     }
-    if (!(await this.sessionIsActive(sessionId, userId))) {
-      return new Response('Não autorizado.', { status: 401 });
-    }
 
-    const displayName = decodeURIComponent(encodedDisplayName);
     const url = new URL(request.url);
-    const requestedCallInstanceId = url.searchParams.get('callInstanceId');
     const requestedConnectionId = url.searchParams.get('connectionId');
     const requestedEpoch = Number(url.searchParams.get('connectionEpoch'));
     const resumedAttachment =
-      requestedCallInstanceId &&
       requestedConnectionId &&
-      UUID_PATTERN.test(requestedCallInstanceId) &&
       UUID_PATTERN.test(requestedConnectionId) &&
       Number.isSafeInteger(requestedEpoch) &&
       requestedEpoch > 1
-        ? await this.resumeConnection(
-            userId,
-            sessionId,
-            requestedCallInstanceId,
-            requestedConnectionId,
-            requestedEpoch,
-          )
+        ? await this.resumeConnection(userId, sessionId, requestedConnectionId, requestedEpoch)
         : null;
     const resumed = resumedAttachment !== null;
-
-    if (!resumed) {
-      await this.finalizeSuspendedConnections(userId);
-      for (const existingSocket of this.ctx.getWebSockets(`user:${userId}`)) {
-        const existing = existingSocket.deserializeAttachment() as ConnectionAttachment | null;
-        if (existing) {
-          existing.superseded = true;
-          existing.lifecycleHandled = true;
-          existingSocket.serializeAttachment(existing);
-          this.broadcastUnpublished(existing, 'publisher_left');
-          this.scheduleRealtimeCleanup(existingSocket, existing);
-        }
-        existingSocket.close(4001, 'Conexão substituída');
-      }
-    }
+    const wasOnline = await this.userIsOnline(userId);
 
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     const attachment: ConnectionAttachment = resumedAttachment ?? {
-      callInstanceId: crypto.randomUUID(),
+      channelId: null,
       connectionId: crypto.randomUUID(),
       connectionEpoch: 1,
       sessionId,
+      sessionCheckAt,
       userId,
-      displayName,
       muted: false,
       deafened: false,
       speaking: false,
@@ -174,15 +146,12 @@ export class VoiceRoom extends DurableObject<Env> {
       messageWindowStartedAt: Date.now(),
       messagesInWindow: 0,
       lastSpeakingUpdateAt: 0,
-      lastHeartbeatAt: Date.now(),
       realtimeSessionId: null,
-      cleanupStarted: false,
-      visibility: 'foreground',
       publications: [],
       pendingClosures: [],
       subscriptions: [],
     };
-    attachment.displayName = displayName;
+    attachment.sessionCheckAt = sessionCheckAt;
     attachment.invalidMessages = 0;
     attachment.lifecycleHandled = false;
     attachment.messageWindowStartedAt = Date.now();
@@ -193,67 +162,38 @@ export class VoiceRoom extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [
       `user:${userId}`,
       `connection:${attachment.connectionId}`,
-      `call:${attachment.callInstanceId}`,
+      ...(attachment.channelId ? [`channel:${attachment.channelId}`] : []),
     ]);
-    await this.ensureSessionAlarm();
-
-    const suspended = await this.suspendedConnections();
-    const activeParticipants = this.participants();
-    const activePublications = this.publications();
-    const participants = [
-      ...activeParticipants,
-      ...suspended
-        .filter(
-          (record) =>
-            !activeParticipants.some(
-              (participant) => participant.userId === record.attachment.userId,
-            ),
-        )
-        .map((record) => toParticipant(record.attachment)),
-    ];
-    const publications = [
-      ...activePublications,
-      ...suspended.flatMap((record) =>
-        activePublications.some((publication) => publication.userId === record.attachment.userId)
-          ? []
-          : record.attachment.publications
-              .filter((publication) => !publication.pending)
-              .map(toPublicPublication),
-      ),
-    ];
+    await this.ensureAlarm();
+    const snapshot = await this.snapshot();
 
     this.send(server, {
-      v: ROOM_PROTOCOL_VERSION,
-      type: 'room.ready',
+      v: REALTIME_PROTOCOL_VERSION,
+      type: 'server.ready',
       payload: {
         connectionId: attachment.connectionId,
-        callInstanceId: attachment.callInstanceId,
         connectionEpoch: attachment.connectionEpoch,
         resumed,
-        participants,
-        publications,
+        ...snapshot,
       },
     });
-    if (resumed) {
-      this.send(server, {
-        v: ROOM_PROTOCOL_VERSION,
-        type: 'connection.restored',
-        payload: { connectionEpoch: attachment.connectionEpoch },
-      });
+    if (!wasOnline) {
       this.broadcast(
-        { v: ROOM_PROTOCOL_VERSION, type: 'member.updated', payload: toParticipant(attachment) },
-        server,
-      );
-    } else {
-      this.broadcast(
-        { v: ROOM_PROTOCOL_VERSION, type: 'member.joined', payload: toParticipant(attachment) },
+        {
+          v: REALTIME_PROTOCOL_VERSION,
+          type: 'presence.changed',
+          payload: { userId, online: true },
+        },
         server,
       );
     }
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  override webSocketMessage(socket: WebSocket, rawMessage: string | ArrayBuffer): void {
+  override async webSocketMessage(
+    socket: WebSocket,
+    rawMessage: string | ArrayBuffer,
+  ): Promise<void> {
     const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
     if (!attachment) {
       socket.close(1011, 'Estado de conexão indisponível');
@@ -290,15 +230,50 @@ export class VoiceRoom extends DurableObject<Env> {
       return;
     }
 
+    if (result.data.type === 'call.join' || result.data.type === 'call.takeover') {
+      await this.joinCall(
+        socket,
+        attachment,
+        result.data.payload.channelId,
+        result.data.payload.requestId,
+        result.data.type === 'call.takeover',
+      );
+      return;
+    }
+
+    if (result.data.type === 'call.leave') {
+      if (!attachment.channelId) {
+        this.send(socket, {
+          v: REALTIME_PROTOCOL_VERSION,
+          type: 'call.left',
+          payload: { requestId: result.data.payload.requestId },
+        });
+        return;
+      }
+      this.leaveCall(socket, attachment, result.data.payload.requestId, 'publisher_left');
+      return;
+    }
+
+    if (result.data.type === 'state.resync') {
+      this.send(socket, {
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'state.snapshot',
+        payload: await this.snapshot(),
+      });
+      return;
+    }
+
+    if (!attachment.channelId) return;
+
     if (result.data.type === 'member.updated') {
       attachment.deafened = result.data.payload.deafened;
       attachment.muted = result.data.payload.muted || attachment.deafened;
       if (attachment.muted) attachment.speaking = false;
       socket.serializeAttachment(attachment);
       this.broadcast({
-        v: ROOM_PROTOCOL_VERSION,
-        type: 'member.updated',
-        payload: toParticipant(attachment),
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'call.member.updated',
+        payload: toParticipant(attachment)!,
       });
       return;
     }
@@ -311,27 +286,9 @@ export class VoiceRoom extends DurableObject<Env> {
       attachment.speaking = speaking;
       socket.serializeAttachment(attachment);
       this.broadcast({
-        v: ROOM_PROTOCOL_VERSION,
+        v: REALTIME_PROTOCOL_VERSION,
         type: speaking ? 'voice.speaking' : 'voice.stopped',
         payload: { userId: attachment.userId },
-      });
-      return;
-    }
-
-    if (result.data.type === 'heartbeat') {
-      if (
-        result.data.payload.connectionEpoch !== undefined &&
-        result.data.payload.connectionEpoch !== attachment.connectionEpoch
-      ) {
-        return;
-      }
-      attachment.lastHeartbeatAt = now;
-      attachment.visibility = result.data.payload.visibility ?? attachment.visibility;
-      socket.serializeAttachment(attachment);
-      this.send(socket, {
-        v: ROOM_PROTOCOL_VERSION,
-        type: 'heartbeat.ack',
-        payload: { serverTime: now },
       });
     }
   }
@@ -348,11 +305,7 @@ export class VoiceRoom extends DurableObject<Env> {
     if (!attachment || attachment.lifecycleHandled || attachment.superseded) return;
     attachment.lifecycleHandled = true;
     socket.serializeAttachment(attachment);
-    const replacementIsOpen = this.ctx
-      .getWebSockets(`user:${attachment.userId}`)
-      .some((candidate) => candidate !== socket && candidate.readyState === WebSocket.OPEN);
-    if (replacementIsOpen) return;
-    if (code !== 1000 && code !== 4001 && code !== 4003) {
+    if (code !== 1000 && code !== 4003) {
       await this.suspendConnection(attachment);
       return;
     }
@@ -369,53 +322,170 @@ export class VoiceRoom extends DurableObject<Env> {
       prefix: SUSPENDED_CONNECTION_PREFIX,
     });
     for (const [key, record] of suspendedEntries) {
-      const sessionActive = await this.sessionIsActive(
-        record.attachment.sessionId,
-        record.attachment.userId,
-      );
-      if (record.expiresAt <= now || !sessionActive) {
+      if (record.expiresAt <= now) {
         this.finalizeConnection(undefined, record.attachment, 'network_failure');
         await this.ctx.storage.delete(key);
       }
     }
 
-    const sockets = this.ctx
-      .getWebSockets()
-      .filter((socket) => socket.readyState === WebSocket.OPEN);
-    const validity = await Promise.all(
-      sockets.map(async (socket) => {
-        const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
-        return {
-          attachment,
-          active: attachment
-            ? await this.sessionIsActive(attachment.sessionId, attachment.userId)
-            : false,
-        };
-      }),
-    );
-
-    let activeConnections = 0;
-    for (const [index, result] of validity.entries()) {
-      const socket = sockets[index];
-      if (!socket) continue;
-      if (!result.active) socket.close(4003, 'Sessão encerrada');
-      else activeConnections += 1;
+    for (const socket of this.ctx.getWebSockets()) {
+      if (socket.readyState !== WebSocket.OPEN) continue;
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      if (!attachment || attachment.sessionCheckAt > now) continue;
+      const nextCheck = await this.nextSessionCheck(attachment.sessionId, attachment.userId);
+      if (nextCheck === null) socket.close(4003, 'Sessão encerrada');
+      else {
+        attachment.sessionCheckAt = nextCheck;
+        socket.serializeAttachment(attachment);
+      }
     }
-    const remainingSuspended = [...suspendedEntries.values()].some(
-      (record) => record.expiresAt > now,
-    );
-    if (activeConnections > 0 || remainingSuspended) {
-      await this.ctx.storage.setAlarm(
-        Date.now() +
-          (remainingSuspended
-            ? Math.min(SESSION_REVALIDATION_SECONDS * 1_000, CONNECTION_RESUME_GRACE_MS)
-            : SESSION_REVALIDATION_SECONDS * 1_000),
-      );
+    await this.ensureAlarm();
+  }
+
+  hasActiveCall(userId: string, connectionId: string, channelId: string): boolean {
+    return this.findConnection(userId, connectionId)?.attachment.channelId === channelId;
+  }
+
+  disconnectSession(sessionId: string, reconnectable = false): void {
+    for (const socket of this.ctx.getWebSockets()) {
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      if (attachment?.sessionId === sessionId) {
+        socket.close(reconnectable ? 4004 : 4003, 'Sessão encerrada');
+      }
     }
   }
 
-  hasConnection(userId: string, connectionId: string): boolean {
-    return this.findConnection(userId, connectionId) !== undefined;
+  disconnectUser(userId: string): void {
+    for (const socket of this.ctx.getWebSockets(`user:${userId}`)) {
+      socket.close(4003, 'Sessão encerrada');
+    }
+  }
+
+  announceMember(type: 'member.added' | 'member.updated' | 'member.removed', member: MemberView) {
+    this.broadcast({ v: REALTIME_PROTOCOL_VERSION, type, payload: member });
+  }
+
+  private async joinCall(
+    socket: WebSocket,
+    attachment: ConnectionAttachment,
+    channelId: string,
+    requestId: string,
+    takeover: boolean,
+  ): Promise<void> {
+    const channel = await this.env.DB.prepare(
+      "SELECT id FROM rooms WHERE id = ? AND kind = 'voice' LIMIT 1",
+    )
+      .bind(channelId)
+      .first<{ id: string }>();
+    if (!channel) {
+      this.send(socket, {
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'error',
+        payload: { message: 'Este canal de voz não está disponível.', requestId },
+      });
+      return;
+    }
+
+    const owner = await this.findCallOwner(attachment.userId);
+    if (owner && owner.attachment.connectionId !== attachment.connectionId && !takeover) {
+      this.send(socket, {
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'call.conflict',
+        payload: { channelId: owner.attachment.channelId!, requestId },
+      });
+      return;
+    }
+    if (owner && owner.attachment.connectionId !== attachment.connectionId) {
+      if (owner.socket) {
+        this.send(owner.socket, {
+          v: REALTIME_PROTOCOL_VERSION,
+          type: 'call.replaced',
+          payload: { channelId: owner.attachment.channelId! },
+        });
+        this.leaveCall(owner.socket, owner.attachment, undefined, 'publisher_left');
+      } else if (owner.storageKey) {
+        this.finalizeCall(undefined, owner.attachment, 'publisher_left');
+        await this.ctx.storage.delete(owner.storageKey);
+      }
+    }
+
+    if (attachment.channelId && attachment.channelId !== channelId) {
+      this.leaveCall(socket, attachment, undefined, 'publisher_left');
+    }
+    const newlyJoined = attachment.channelId !== channelId;
+    attachment.channelId = channelId;
+    attachment.muted = false;
+    attachment.deafened = false;
+    attachment.speaking = false;
+    socket.serializeAttachment(attachment);
+
+    if (newlyJoined) {
+      this.broadcast(
+        {
+          v: REALTIME_PROTOCOL_VERSION,
+          type: 'call.member.joined',
+          payload: toParticipant(attachment)!,
+        },
+        socket,
+      );
+    }
+    const snapshot = await this.snapshot(channelId);
+    this.send(socket, {
+      v: REALTIME_PROTOCOL_VERSION,
+      type: 'call.joined',
+      payload: {
+        requestId,
+        channelId,
+        participants: snapshot.participants,
+        publications: snapshot.publications,
+      },
+    });
+  }
+
+  private leaveCall(
+    socket: WebSocket,
+    attachment: ConnectionAttachment,
+    requestId: string | undefined,
+    reason: MediaEndReason,
+  ): void {
+    if (!attachment.channelId) return;
+    this.finalizeCall(socket, attachment, reason, requestId);
+    attachment.channelId = null;
+    attachment.muted = false;
+    attachment.deafened = false;
+    attachment.speaking = false;
+    attachment.realtimeSessionId = null;
+    attachment.publications = [];
+    attachment.pendingClosures = [];
+    attachment.subscriptions = [];
+    socket.serializeAttachment(attachment);
+  }
+
+  private finalizeCall(
+    socket: WebSocket | undefined,
+    attachment: ConnectionAttachment,
+    reason: MediaEndReason,
+    requestId?: string,
+  ): void {
+    if (!attachment.channelId) return;
+    const departing = {
+      ...attachment,
+      publications: [...attachment.publications],
+      pendingClosures: [...attachment.pendingClosures],
+      subscriptions: [...attachment.subscriptions],
+    };
+    void socket;
+    this.ctx.waitUntil(this.cleanupRealtime(departing));
+    this.broadcastUnpublished(departing, reason);
+    this.broadcast({
+      v: REALTIME_PROTOCOL_VERSION,
+      type: 'call.member.left',
+      payload: {
+        userId: attachment.userId,
+        channelId: attachment.channelId,
+        ...(requestId ? { requestId } : {}),
+      },
+    });
   }
 
   registerRealtimeSession(userId: string, connectionId: string, sessionId: string): boolean {
@@ -482,6 +552,47 @@ export class VoiceRoom extends DurableObject<Env> {
     return publicationId;
   }
 
+  reservePublications(
+    userId: string,
+    connectionId: string,
+    sessionId: string,
+    tracks: { source: MediaSource; mid: string }[],
+  ): { publicationId: string; source: MediaSource; mid: string }[] | null {
+    const connection = this.findConnection(userId, connectionId);
+    if (connection?.attachment.realtimeSessionId !== sessionId) return null;
+    const requestedSources = new Set(tracks.map((track) => track.source));
+    if (requestedSources.size !== tracks.length) return null;
+    if (
+      tracks.some((track) =>
+        connection.attachment.publications.some((item) => item.source === track.source),
+      )
+    ) {
+      return null;
+    }
+    const hasScreenVideo =
+      requestedSources.has('screen-video') ||
+      connection.attachment.publications.some(
+        (item) => item.source === 'screen-video' && !item.pending,
+      );
+    if (requestedSources.has('screen-audio') && !hasScreenVideo) return null;
+    const reservations = tracks.map((track) => ({ ...track, publicationId: crypto.randomUUID() }));
+    connection.attachment.publications.push(
+      ...reservations.map((reservation) => ({
+        publicationId: reservation.publicationId,
+        userId,
+        source: reservation.source,
+        kind: SOURCE_KINDS[reservation.source],
+        createdAt: Date.now(),
+        realtimeSessionId: sessionId,
+        realtimeTrackName: '',
+        mid: reservation.mid,
+        pending: true,
+      })),
+    );
+    connection.socket.serializeAttachment(connection.attachment);
+    return reservations;
+  }
+
   completePublication(
     userId: string,
     connectionId: string,
@@ -497,8 +608,51 @@ export class VoiceRoom extends DurableObject<Env> {
     record.pending = false;
     connection.socket.serializeAttachment(connection.attachment);
     const publication = toPublicPublication(record);
-    this.broadcast({ v: ROOM_PROTOCOL_VERSION, type: 'media.published', payload: publication });
+    this.broadcast({
+      v: REALTIME_PROTOCOL_VERSION,
+      type: 'media.published',
+      payload: publication,
+    });
     return publication;
+  }
+
+  completePublications(
+    userId: string,
+    connectionId: string,
+    tracks: { publicationId: string; realtimeTrackName: string }[],
+  ): MediaPublication[] | null {
+    const connection = this.findConnection(userId, connectionId);
+    if (!connection) return null;
+    const records = tracks.map((track) =>
+      connection.attachment.publications.find(
+        (item) => item.publicationId === track.publicationId && item.pending,
+      ),
+    );
+    if (records.some((record) => !record)) return null;
+    const publications = records.map((record, index) => {
+      record!.realtimeTrackName = tracks[index]!.realtimeTrackName;
+      record!.pending = false;
+      return toPublicPublication(record!);
+    });
+    connection.socket.serializeAttachment(connection.attachment);
+    for (const publication of publications) {
+      this.broadcast({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'media.published',
+        payload: publication,
+      });
+    }
+    return publications;
+  }
+
+  cancelPublications(userId: string, connectionId: string, publicationIds: string[]): void {
+    const connection = this.findConnection(userId, connectionId);
+    if (!connection) return;
+    const cancelled = new Set(publicationIds);
+    connection.attachment.publications = connection.attachment.publications.filter(
+      (item) => !cancelled.has(item.publicationId) || !item.pending,
+    );
+    connection.socket.serializeAttachment(connection.attachment);
   }
 
   cancelPublication(userId: string, connectionId: string, publicationId: string): void {
@@ -515,8 +669,13 @@ export class VoiceRoom extends DurableObject<Env> {
     connectionId: string,
     publicationId: string,
   ): Promise<ResolvedPublication | null> {
-    if (!this.findConnection(userId, connectionId)) return null;
-    const publication = await this.findRemotePublication(userId, publicationId);
+    const connection = this.findConnection(userId, connectionId);
+    if (!connection?.attachment.channelId) return null;
+    const publication = await this.findRemotePublication(
+      userId,
+      connection.attachment.channelId,
+      publicationId,
+    );
     return publication ? this.resolveRecord(publication) : null;
   }
 
@@ -536,11 +695,89 @@ export class VoiceRoom extends DurableObject<Env> {
       return null;
     }
 
-    const publication = await this.findRemotePublication(userId, publicationId);
+    if (!connection.attachment.channelId) return null;
+    const publication = await this.findRemotePublication(
+      userId,
+      connection.attachment.channelId,
+      publicationId,
+    );
     if (!publication) return null;
     connection.attachment.subscriptions.push({ publicationId, mid: '', pending: true });
     connection.socket.serializeAttachment(connection.attachment);
     return this.resolveRecord(publication);
+  }
+
+  async reserveSubscriptions(
+    userId: string,
+    connectionId: string,
+    sessionId: string,
+    publicationIds: string[],
+  ): Promise<ResolvedPublication[] | null> {
+    const connection = this.findConnection(userId, connectionId);
+    if (
+      !connection?.attachment.channelId ||
+      connection.attachment.realtimeSessionId !== sessionId
+    ) {
+      return null;
+    }
+    const uniqueIds = new Set(publicationIds);
+    if (
+      uniqueIds.size !== publicationIds.length ||
+      publicationIds.some((publicationId) =>
+        connection.attachment.subscriptions.some(
+          (subscription) => subscription.publicationId === publicationId,
+        ),
+      )
+    ) {
+      return null;
+    }
+    const records: PublicationRecord[] = [];
+    for (const publicationId of publicationIds) {
+      const publication = await this.findRemotePublication(
+        userId,
+        connection.attachment.channelId,
+        publicationId,
+      );
+      if (!publication) return null;
+      records.push(publication);
+    }
+    connection.attachment.subscriptions.push(
+      ...publicationIds.map((publicationId) => ({ publicationId, mid: '', pending: true })),
+    );
+    connection.socket.serializeAttachment(connection.attachment);
+    return records.map((record) => this.resolveRecord(record));
+  }
+
+  completeSubscriptions(
+    userId: string,
+    connectionId: string,
+    sessionId: string,
+    subscriptions: { publicationId: string; mid: string }[],
+  ): boolean {
+    const connection = this.findConnection(userId, connectionId);
+    if (connection?.attachment.realtimeSessionId !== sessionId) return false;
+    const pending = subscriptions.map((subscription) =>
+      connection.attachment.subscriptions.find(
+        (item) => item.publicationId === subscription.publicationId && item.pending === true,
+      ),
+    );
+    if (pending.some((subscription) => !subscription)) return false;
+    pending.forEach((subscription, index) => {
+      subscription!.mid = subscriptions[index]!.mid;
+      subscription!.pending = false;
+    });
+    connection.socket.serializeAttachment(connection.attachment);
+    return true;
+  }
+
+  cancelSubscriptions(userId: string, connectionId: string, publicationIds: string[]): void {
+    const connection = this.findConnection(userId, connectionId);
+    if (!connection) return;
+    const cancelled = new Set(publicationIds);
+    connection.attachment.subscriptions = connection.attachment.subscriptions.filter(
+      (item) => !cancelled.has(item.publicationId) || item.pending !== true,
+    );
+    connection.socket.serializeAttachment(connection.attachment);
   }
 
   resolveOwnedPublication(
@@ -595,7 +832,7 @@ export class VoiceRoom extends DurableObject<Env> {
     );
     connection.socket.serializeAttachment(connection.attachment);
     this.broadcast({
-      v: ROOM_PROTOCOL_VERSION,
+      v: REALTIME_PROTOCOL_VERSION,
       type: 'media.unpublished',
       payload: { publicationId, userId, source: record.source, reason },
     });
@@ -683,6 +920,7 @@ export class VoiceRoom extends DurableObject<Env> {
 
   private async findRemotePublication(
     requestingUserId: string,
+    channelId: string,
     publicationId: string,
   ): Promise<PublicationRecord | null> {
     for (const socket of this.ctx.getWebSockets()) {
@@ -691,11 +929,22 @@ export class VoiceRoom extends DurableObject<Env> {
       const publication = attachment?.publications.find(
         (item) => item.publicationId === publicationId && !item.pending,
       );
-      if (attachment?.userId !== requestingUserId && publication) return publication;
+      if (
+        attachment?.userId !== requestingUserId &&
+        attachment?.channelId === channelId &&
+        publication
+      ) {
+        return publication;
+      }
     }
     const suspended = await this.suspendedConnections();
     for (const record of suspended) {
-      if (record.attachment.userId === requestingUserId) continue;
+      if (
+        record.attachment.userId === requestingUserId ||
+        record.attachment.channelId !== channelId
+      ) {
+        continue;
+      }
       const publication = record.attachment.publications.find(
         (item) => item.publicationId === publicationId && !item.pending,
       );
@@ -704,24 +953,70 @@ export class VoiceRoom extends DurableObject<Env> {
     return null;
   }
 
-  private participants(): RoomParticipant[] {
-    return this.ctx.getWebSockets().flatMap((socket) => {
-      if (socket.readyState !== WebSocket.OPEN) return [];
+  private async findCallOwner(userId: string): Promise<{
+    attachment: ConnectionAttachment;
+    socket?: WebSocket;
+    storageKey?: string;
+  } | null> {
+    for (const socket of this.ctx.getWebSockets(`user:${userId}`)) {
+      if (socket.readyState !== WebSocket.OPEN) continue;
       const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
-      return attachment ? [toParticipant(attachment)] : [];
+      if (attachment?.channelId) return { attachment, socket };
+    }
+    const suspended = await this.ctx.storage.list<SuspendedConnectionRecord>({
+      prefix: `${SUSPENDED_CONNECTION_PREFIX}${userId}:`,
     });
+    for (const [storageKey, record] of suspended) {
+      if (record.expiresAt > Date.now() && record.attachment.channelId) {
+        return { attachment: record.attachment, storageKey };
+      }
+    }
+    return null;
   }
 
-  private publications(): MediaPublication[] {
-    return this.ctx.getWebSockets().flatMap((socket) => {
+  private async snapshot(channelId?: string): Promise<{
+    onlineUserIds: string[];
+    participants: CallParticipant[];
+    publications: MediaPublication[];
+  }> {
+    const active = this.ctx.getWebSockets().flatMap((socket) => {
       if (socket.readyState !== WebSocket.OPEN) return [];
       const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
-      return (
-        attachment?.publications
-          .filter((publication) => !publication.pending)
-          .map(toPublicPublication) ?? []
-      );
+      return attachment ? [attachment] : [];
     });
+    const suspended = (await this.suspendedConnections()).map((record) => record.attachment);
+    const connections = [...active, ...suspended];
+    const onlineUserIds = [...new Set(connections.map((connection) => connection.userId))];
+    const seenCallUsers = new Set<string>();
+    const participants: CallParticipant[] = [];
+    const publications: MediaPublication[] = [];
+    for (const connection of connections) {
+      if (!connection.channelId || (channelId && connection.channelId !== channelId)) continue;
+      if (!seenCallUsers.has(connection.userId)) {
+        const participant = toParticipant(connection);
+        if (participant) participants.push(participant);
+        seenCallUsers.add(connection.userId);
+      }
+      publications.push(
+        ...connection.publications
+          .filter((publication) => !publication.pending)
+          .map(toPublicPublication),
+      );
+    }
+    return { onlineUserIds, participants, publications };
+  }
+
+  private async userIsOnline(userId: string, excludedConnectionId?: string): Promise<boolean> {
+    for (const socket of this.ctx.getWebSockets(`user:${userId}`)) {
+      if (socket.readyState !== WebSocket.OPEN) continue;
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      if (attachment && attachment.connectionId !== excludedConnectionId) return true;
+    }
+    return (await this.suspendedConnections()).some(
+      (record) =>
+        record.attachment.userId === userId &&
+        record.attachment.connectionId !== excludedConnectionId,
+    );
   }
 
   private findConnection(
@@ -738,8 +1033,8 @@ export class VoiceRoom extends DurableObject<Env> {
     return undefined;
   }
 
-  private suspendedConnectionKey(userId: string, callInstanceId: string): string {
-    return `${SUSPENDED_CONNECTION_PREFIX}${userId}:${callInstanceId}`;
+  private suspendedConnectionKey(userId: string, connectionId: string): string {
+    return `${SUSPENDED_CONNECTION_PREFIX}${userId}:${connectionId}`;
   }
 
   private async suspendedConnections(): Promise<SuspendedConnectionRecord[]> {
@@ -753,16 +1048,14 @@ export class VoiceRoom extends DurableObject<Env> {
   private async resumeConnection(
     userId: string,
     sessionId: string,
-    callInstanceId: string,
     connectionId: string,
     requestedEpoch: number,
   ): Promise<ConnectionAttachment | null> {
-    for (const socket of this.ctx.getWebSockets(`call:${callInstanceId}`)) {
+    for (const socket of this.ctx.getWebSockets(`connection:${connectionId}`)) {
       if (socket.readyState !== WebSocket.OPEN) continue;
       const existing = socket.deserializeAttachment() as ConnectionAttachment | null;
       if (
         existing?.userId !== userId ||
-        existing.sessionId !== sessionId ||
         existing.connectionId !== connectionId ||
         requestedEpoch <= existing.connectionEpoch
       ) {
@@ -775,18 +1068,17 @@ export class VoiceRoom extends DurableObject<Env> {
       return {
         ...existing,
         connectionEpoch: requestedEpoch,
-        cleanupStarted: false,
         lifecycleHandled: false,
+        sessionId,
         superseded: false,
       };
     }
 
-    const key = this.suspendedConnectionKey(userId, callInstanceId);
+    const key = this.suspendedConnectionKey(userId, connectionId);
     const suspended = await this.ctx.storage.get<SuspendedConnectionRecord>(key);
     if (
       !suspended ||
       suspended.expiresAt <= Date.now() ||
-      suspended.attachment.sessionId !== sessionId ||
       suspended.attachment.connectionId !== connectionId ||
       requestedEpoch <= suspended.attachment.connectionEpoch
     ) {
@@ -796,8 +1088,8 @@ export class VoiceRoom extends DurableObject<Env> {
     return {
       ...suspended.attachment,
       connectionEpoch: requestedEpoch,
-      cleanupStarted: false,
       lifecycleHandled: false,
+      sessionId,
       superseded: false,
     };
   }
@@ -805,29 +1097,18 @@ export class VoiceRoom extends DurableObject<Env> {
   private async suspendConnection(attachment: ConnectionAttachment): Promise<void> {
     const suspendedAttachment = {
       ...attachment,
-      cleanupStarted: false,
       lifecycleHandled: false,
       superseded: false,
       speaking: false,
     };
     await this.ctx.storage.put(
-      this.suspendedConnectionKey(attachment.userId, attachment.callInstanceId),
+      this.suspendedConnectionKey(attachment.userId, attachment.connectionId),
       {
         attachment: suspendedAttachment,
         expiresAt: Date.now() + CONNECTION_RESUME_GRACE_MS,
       } satisfies SuspendedConnectionRecord,
     );
-    await this.ensureSessionAlarm(Date.now() + CONNECTION_RESUME_GRACE_MS);
-  }
-
-  private async finalizeSuspendedConnections(userId: string): Promise<void> {
-    const records = await this.ctx.storage.list<SuspendedConnectionRecord>({
-      prefix: `${SUSPENDED_CONNECTION_PREFIX}${userId}:`,
-    });
-    for (const [key, record] of records) {
-      this.finalizeConnection(undefined, record.attachment, 'publisher_left');
-      await this.ctx.storage.delete(key);
-    }
+    await this.ensureAlarm();
   }
 
   private finalizeConnection(
@@ -835,31 +1116,45 @@ export class VoiceRoom extends DurableObject<Env> {
     attachment: ConnectionAttachment,
     reason: MediaEndReason,
   ): void {
-    if (socket) this.scheduleRealtimeCleanup(socket, attachment);
-    else this.ctx.waitUntil(this.cleanupRealtime(attachment));
-    this.broadcastUnpublished(attachment, reason);
-    this.broadcast({
-      v: ROOM_PROTOCOL_VERSION,
-      type: 'member.left',
-      payload: { userId: attachment.userId },
-    });
+    if (attachment.channelId) this.finalizeCall(socket, attachment, reason);
+    this.ctx.waitUntil(
+      this.userIsOnline(attachment.userId, attachment.connectionId).then((online) => {
+        if (!online) {
+          this.broadcast({
+            v: REALTIME_PROTOCOL_VERSION,
+            type: 'presence.changed',
+            payload: { userId: attachment.userId, online: false },
+          });
+        }
+      }),
+    );
   }
 
-  private async ensureSessionAlarm(
-    desiredTime = Date.now() + SESSION_REVALIDATION_SECONDS * 1_000,
-  ): Promise<void> {
+  private async ensureAlarm(): Promise<void> {
+    const candidates: number[] = [];
+    for (const socket of this.ctx.getWebSockets()) {
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      if (attachment) candidates.push(attachment.sessionCheckAt);
+    }
+    const suspended = await this.ctx.storage.list<SuspendedConnectionRecord>({
+      prefix: SUSPENDED_CONNECTION_PREFIX,
+    });
+    for (const record of suspended.values()) {
+      candidates.push(record.expiresAt, record.attachment.sessionCheckAt);
+    }
+    const desiredTime = Math.min(...candidates.filter((value) => value > Date.now()));
+    if (!Number.isFinite(desiredTime)) return;
     const currentAlarm = await this.ctx.storage.getAlarm();
     if (currentAlarm === null || desiredTime < currentAlarm) {
       await this.ctx.storage.setAlarm(desiredTime);
     }
   }
 
-  private async sessionIsActive(sessionId: string, userId: string): Promise<boolean> {
-    if (!UUID_PATTERN.test(sessionId) || !UUID_PATTERN.test(userId)) return false;
+  private async nextSessionCheck(sessionId: string, userId: string): Promise<number | null> {
     const now = new Date();
     const idleCutoff = new Date(now.getTime() - SESSION_IDLE_SECONDS * 1_000).toISOString();
     const session = await this.env.DB.prepare(
-      `SELECT s.id
+      `SELECT s.last_seen_at, s.expires_at
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.id = ? AND s.user_id = ? AND s.revoked_at IS NULL
@@ -867,8 +1162,12 @@ export class VoiceRoom extends DurableObject<Env> {
        LIMIT 1`,
     )
       .bind(sessionId, userId, now.toISOString(), idleCutoff)
-      .first<{ id: string }>();
-    return session !== null;
+      .first<{ last_seen_at: string; expires_at: string }>();
+    if (!session) return null;
+    return Math.min(
+      new Date(session.expires_at).getTime(),
+      new Date(session.last_seen_at).getTime() + SESSION_IDLE_SECONDS * 1_000,
+    );
   }
 
   private async cleanupRealtime(attachment: ConnectionAttachment): Promise<void> {
@@ -890,18 +1189,11 @@ export class VoiceRoom extends DurableObject<Env> {
     }
   }
 
-  private scheduleRealtimeCleanup(socket: WebSocket, attachment: ConnectionAttachment): void {
-    if (attachment.cleanupStarted) return;
-    attachment.cleanupStarted = true;
-    socket.serializeAttachment(attachment);
-    this.ctx.waitUntil(this.cleanupRealtime(attachment));
-  }
-
   private broadcastUnpublished(attachment: ConnectionAttachment, reason: MediaEndReason): void {
     for (const publication of attachment.publications) {
       if (publication.pending) continue;
       this.broadcast({
-        v: ROOM_PROTOCOL_VERSION,
+        v: REALTIME_PROTOCOL_VERSION,
         type: 'media.unpublished',
         payload: {
           publicationId: publication.publicationId,

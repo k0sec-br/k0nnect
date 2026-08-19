@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { AppShell } from '../components/app-shell';
 import { AudioOnlyView } from '../components/audio-only-view';
@@ -26,15 +26,11 @@ function connectionStatusLabel(state: ReturnType<typeof useCall>['connectionStat
 
 export function AppPage() {
   const { logout, user } = useAuth();
-  const { activateRoom, config, connectionState, loadError, room, socket, voice } = useCall();
+  const { config, connectionState, loadError, members, room, socket, voice } = useCall();
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const membersAreOptional = useMediaQuery('(max-width: 1199px)');
   const mobileLayout = useMediaQuery('(max-width: 767px)');
-
-  useEffect(() => {
-    activateRoom();
-  }, [activateRoom]);
 
   if (!user) return null;
   if (!room) {
@@ -79,6 +75,8 @@ export function AppPage() {
       user={user}
       roomName={room.name}
       participants={socket.participants}
+      members={members}
+      onlineUserIds={socket.onlineUserIds}
       publications={socket.publications}
       connectionState={connectionState}
       voice={shellVoice}
@@ -123,6 +121,11 @@ export function AppPage() {
         <div className="voice-room-content">
           {(socket.message || voice.error) && (
             <FormMessage message={voice.error || socket.message} />
+          )}
+          {voice.callConflict && (
+            <button className="button secondary" type="button" onClick={voice.takeoverCall}>
+              Transferir chamada para este dispositivo
+            </button>
           )}
           {!config?.realtimeEnabled && (
             <div className="inline-notice" role="status">

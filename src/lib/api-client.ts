@@ -1,4 +1,5 @@
 import type { ApiResponse } from '../../shared/types/api';
+import { incrementDevelopmentMetric } from './development-metrics';
 
 export class UserFacingError extends Error {
   constructor(
@@ -39,6 +40,15 @@ class ApiClient {
 
     let response: Response;
     try {
+      incrementDevelopmentMetric('httpRequests');
+      if (path === '/api/realtime/session' && typeof init.body === 'string') {
+        try {
+          const action = (JSON.parse(init.body) as { action?: string }).action;
+          incrementDevelopmentMetric('realtimeApiCalls', action === 'create' ? 2 : 1);
+        } catch {
+          // Request validation handles malformed payloads.
+        }
+      }
       response = await fetch(path, { ...init, credentials: 'include', headers });
     } catch {
       throw new UserFacingError(

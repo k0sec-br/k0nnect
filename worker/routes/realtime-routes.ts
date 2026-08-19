@@ -7,8 +7,12 @@ import { AppError } from '../errors/app-error';
 import { parseJson, success } from '../http';
 import { developmentRealtimeResponse } from '../realtime/development-realtime';
 import { CloudflareRealtimeClient } from '../realtime/cloudflare-realtime';
-import { roomExists } from '../repositories/rooms';
-import { enforceRateLimit, RATE_LIMIT_POLICIES, requestIp } from '../security/rate-limit';
+import {
+  enforceRateLimit,
+  enforceRateLimits,
+  RATE_LIMIT_POLICIES,
+  requestIp,
+} from '../security/rate-limit';
 
 export const realtimeRoutes = new Hono<AppBindings>();
 
@@ -16,25 +20,18 @@ realtimeRoutes.post('/session', async (context) => {
   const authenticated = await requireSession(context);
   await verifyCsrf(context, authenticated);
   const input = await parseJson(context, realtimeSessionRequestSchema);
-  if (!(await roomExists(context.env.DB, input.roomId))) {
-    throw new AppError('ROOM_UNAVAILABLE', 404);
-  }
   await Promise.all([
     enforceRateLimit(context.env, `ip:${requestIp(context.req.raw)}`, RATE_LIMIT_POLICIES.realtime),
-    enforceRateLimit(context.env, authenticated.user.id, RATE_LIMIT_POLICIES.realtime),
-    enforceRateLimit(
-      context.env,
-      authenticated.user.id,
+    enforceRateLimits(context.env, authenticated.user.id, [
+      RATE_LIMIT_POLICIES.realtime,
       input.action === 'create'
         ? RATE_LIMIT_POLICIES.realtimeSession
-        : input.action === 'turn'
-          ? RATE_LIMIT_POLICIES.realtimeTurn
-          : RATE_LIMIT_POLICIES.realtimeMedia,
-    ),
+        : RATE_LIMIT_POLICIES.realtimeMedia,
+    ]),
   ]);
 
-  const room = context.env.VOICE_ROOMS.getByName(input.roomId);
-  if (!(await room.hasConnection(authenticated.user.id, input.connectionId))) {
+  const server = context.env.SERVER_REALTIME.getByName('k0sec');
+  if (!(await server.hasActiveCall(authenticated.user.id, input.connectionId, input.roomId))) {
     throw new AppError('ROOM_UNAVAILABLE', 409);
   }
 
@@ -42,28 +39,27 @@ realtimeRoutes.post('/session', async (context) => {
     const response = developmentRealtimeResponse(input);
     if (input.action === 'create') {
       const sessionId = (response as { sessionId: string }).sessionId;
-      await room.registerRealtimeSession(authenticated.user.id, input.connectionId, sessionId);
+      await server.registerRealtimeSession(authenticated.user.id, input.connectionId, sessionId);
     }
     return success(context, response);
   }
 
   const realtime = new CloudflareRealtimeClient(context.env);
   if (input.action === 'create') {
-    const response = await realtime.createSession();
-    const registered = await room.registerRealtimeSession(
+    const [response, turn] = await Promise.all([
+      realtime.createSession(),
+      realtime.generateTurnCredentials(),
+    ]);
+    const registered = await server.registerRealtimeSession(
       authenticated.user.id,
       input.connectionId,
       response.sessionId,
     );
     if (!registered) throw new AppError('ROOM_UNAVAILABLE', 409);
-    return success(context, response, 201);
+    return success(context, { ...response, iceServers: turn.iceServers }, 201);
   }
 
-  if (input.action === 'turn') {
-    return success(context, await realtime.generateTurnCredentials(), 201);
-  }
-
-  const ownsSession = await room.ownsRealtimeSession(
+  const ownsSession = await server.ownsRealtimeSession(
     authenticated.user.id,
     input.connectionId,
     input.sessionId,
@@ -71,85 +67,108 @@ realtimeRoutes.post('/session', async (context) => {
   if (!ownsSession) throw new AppError('FORBIDDEN', 403);
 
   if (input.action === 'publish') {
-    const publicationId = await room.reservePublication(
+    const reservations = await server.reservePublications(
       authenticated.user.id,
       input.connectionId,
       input.sessionId,
-      input.source,
-      input.mid,
+      input.tracks,
     );
-    if (!publicationId) throw new AppError('FORBIDDEN', 409);
+    if (!reservations) throw new AppError('FORBIDDEN', 409);
 
     try {
-      const requestedTrackName = `${input.source.replace('-', '_')}_${crypto.randomUUID().replaceAll('-', '')}`;
-      const response = await realtime.publishTrack(
+      const requestedTracks = reservations.map((reservation) => ({
+        mid: reservation.mid,
+        trackName: `${reservation.source.replace('-', '_')}_${crypto.randomUUID().replaceAll('-', '')}`,
+      }));
+      const response = await realtime.publishTracks(
         input.sessionId,
         input.sessionDescription,
-        input.mid,
-        requestedTrackName,
+        requestedTracks,
       );
-      const trackName = response.tracks[0]?.trackName;
-      if (!trackName) throw new AppError('MEDIA_UNAVAILABLE', 502);
-      const publication = await room.completePublication(
+      if (response.tracks.length !== reservations.length) {
+        throw new AppError('MEDIA_UNAVAILABLE', 502);
+      }
+      const publications = await server.completePublications(
         authenticated.user.id,
         input.connectionId,
-        publicationId,
-        trackName,
+        reservations.map((reservation, index) => ({
+          publicationId: reservation.publicationId,
+          realtimeTrackName: response.tracks[index]!.trackName,
+        })),
       );
-      if (!publication) throw new AppError('ROOM_UNAVAILABLE', 409);
+      if (!publications) throw new AppError('ROOM_UNAVAILABLE', 409);
       return success(
         context,
         {
-          publication,
+          publications,
           sessionDescription: response.sessionDescription,
           requiresImmediateRenegotiation: response.requiresImmediateRenegotiation ?? false,
         },
         201,
       );
     } catch (error) {
-      await room.cancelPublication(authenticated.user.id, input.connectionId, publicationId);
+      await server.cancelPublications(
+        authenticated.user.id,
+        input.connectionId,
+        reservations.map((reservation) => reservation.publicationId),
+      );
       throw error;
     }
   }
 
   if (input.action === 'subscribe') {
-    const resolved = await room.reserveSubscription(
+    const resolved = await server.reserveSubscriptions(
       authenticated.user.id,
       input.connectionId,
       input.sessionId,
-      input.publicationId,
+      input.publicationIds,
     );
     if (!resolved) throw new AppError('FORBIDDEN', 403);
     try {
-      const response = await realtime.subscribeTrack(
+      const response = await realtime.subscribeTracks(
         input.sessionId,
-        resolved.realtimeSessionId,
-        resolved.realtimeTrackName,
-        resolved.publication.source,
-        input.preferredRid,
+        resolved.map((publication) => ({
+          remoteSessionId: publication.realtimeSessionId,
+          remoteTrackName: publication.realtimeTrackName,
+          source: publication.publication.source,
+          ...(publication.publication.source === 'camera' ? { preferredRid: 'b' } : {}),
+        })),
       );
-      const mid = response.tracks[0]?.mid;
-      if (!mid || !response.sessionDescription) throw new AppError('MEDIA_UNAVAILABLE', 502);
-      const completed = await room.completeSubscription(
+      if (response.tracks.length !== resolved.length || !response.sessionDescription) {
+        throw new AppError('MEDIA_UNAVAILABLE', 502);
+      }
+      const subscriptions = resolved.map((publication, index) => ({
+        publicationId: publication.publication.publicationId,
+        mid: response.tracks[index]!.mid ?? '',
+      }));
+      if (subscriptions.some((subscription) => !subscription.mid)) {
+        throw new AppError('MEDIA_UNAVAILABLE', 502);
+      }
+      const completed = await server.completeSubscriptions(
         authenticated.user.id,
         input.connectionId,
         input.sessionId,
-        input.publicationId,
-        mid,
+        subscriptions,
       );
       if (!completed) throw new AppError('ROOM_UNAVAILABLE', 409);
       return success(
         context,
         {
-          publication: resolved.publication,
-          mid,
+          subscriptions: resolved.map((publication, index) => ({
+            publication: publication.publication,
+            mid: subscriptions[index]!.mid,
+          })),
           sessionDescription: response.sessionDescription,
           requiresImmediateRenegotiation: response.requiresImmediateRenegotiation ?? false,
         },
         201,
       );
     } catch (error) {
-      await room.cancelSubscription(authenticated.user.id, input.connectionId, input.publicationId);
+      await server.cancelSubscriptions(
+        authenticated.user.id,
+        input.connectionId,
+        input.publicationIds,
+      );
       throw error;
     }
   }
@@ -160,7 +179,7 @@ realtimeRoutes.post('/session', async (context) => {
   }
 
   if (input.action === 'unsubscribe') {
-    const mid = await room.takeSubscription(
+    const mid = await server.takeSubscription(
       authenticated.user.id,
       input.connectionId,
       input.sessionId,
@@ -175,7 +194,7 @@ realtimeRoutes.post('/session', async (context) => {
     });
   }
 
-  const owned = await room.resolveOwnedPublication(
+  const owned = await server.resolveOwnedPublication(
     authenticated.user.id,
     input.connectionId,
     input.sessionId,
@@ -184,7 +203,7 @@ realtimeRoutes.post('/session', async (context) => {
   if (!owned) throw new AppError('FORBIDDEN', 403);
   const screenAudio =
     owned.publication.source === 'screen-video'
-      ? await room.resolveOwnedPublicationBySource(
+      ? await server.resolveOwnedPublicationBySource(
           authenticated.user.id,
           input.connectionId,
           input.sessionId,
@@ -193,7 +212,7 @@ realtimeRoutes.post('/session', async (context) => {
       : null;
   const publicationsToClose = [owned, ...(screenAudio ? [screenAudio] : [])];
   for (const publication of publicationsToClose) {
-    await room.removePublication(
+    await server.removePublication(
       authenticated.user.id,
       input.connectionId,
       publication.publication.publicationId,
@@ -204,7 +223,7 @@ realtimeRoutes.post('/session', async (context) => {
     input.sessionId,
     publicationsToClose.map((publication) => publication.mid),
   );
-  await room.completePublicationClosures(
+  await server.completePublicationClosures(
     authenticated.user.id,
     input.connectionId,
     publicationsToClose.map((publication) => publication.publication.publicationId),

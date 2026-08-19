@@ -9,20 +9,22 @@ import {
   type ReactNode,
 } from 'react';
 
-import type { RoomView } from '../../../shared/types/api';
+import type { RoomParticipant } from '../../../shared/protocol/room';
+import type { MemberView, RoomView } from '../../../shared/types/api';
 import { usePublicConfig } from '../../hooks/use-public-config';
-import { apiClient } from '../../lib/api-client';
 import { useAuth } from '../auth/auth-context';
-import { useRoomSocket } from '../rooms/use-room-socket';
+import { useServerRealtime } from '../rooms/use-server-realtime';
 import { useVoiceSession } from '../voice/use-voice-session';
 import { useCallConnectionSupervisor } from './use-call-connection-supervisor';
 
 interface CallContextValue {
-  activateRoom(): void;
   config: ReturnType<typeof usePublicConfig>;
   loadError: string;
+  members: MemberView[];
   room: RoomView | null;
-  socket: ReturnType<typeof useRoomSocket>;
+  socket: Omit<ReturnType<typeof useServerRealtime>, 'participants'> & {
+    participants: RoomParticipant[];
+  };
   voice: ReturnType<typeof useVoiceSession>;
   connectionState: ReturnType<typeof useCallConnectionSupervisor>['state'];
 }
@@ -30,85 +32,71 @@ interface CallContextValue {
 const CallContext = createContext<CallContextValue | null>(null);
 
 export function CallProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { bootstrap, user } = useAuth();
   const config = usePublicConfig();
-  const [activated, setActivated] = useState(false);
-  const [room, setRoom] = useState<RoomView | null>(null);
-  const [loadError, setLoadError] = useState('');
-  const roomRequestRef = useRef<Promise<void> | null>(null);
-  const previousUserIdRef = useRef<string | null>(null);
+  const room = bootstrap?.channels[0] ?? null;
+  const loadError = bootstrap && !room ? 'Nenhuma sala está disponível agora.' : '';
+  const [members, setMembers] = useState<MemberView[]>([]);
 
-  const socket = useRoomSocket(user && activated ? (room?.id ?? null) : null);
+  useEffect(() => setMembers(bootstrap?.members ?? []), [bootstrap]);
+
+  const handleMemberEvent = useCallback(
+    (type: 'member.added' | 'member.updated' | 'member.removed', member: MemberView) => {
+      setMembers((current) =>
+        type === 'member.removed'
+          ? current.filter((item) => item.id !== member.id)
+          : [...current.filter((item) => item.id !== member.id), member],
+      );
+    },
+    [],
+  );
+
+  const realtime = useServerRealtime(
+    user && bootstrap ? bootstrap.server.id : null,
+    user?.id ?? null,
+    handleMemberEvent,
+  );
+  const participants = useMemo<RoomParticipant[]>(
+    () =>
+      realtime.participants.flatMap((participant) => {
+        const member = members.find((item) => item.id === participant.userId);
+        return member ? [{ ...participant, displayName: member.displayName }] : [];
+      }),
+    [members, realtime.participants],
+  );
+  const socket = useMemo(() => ({ ...realtime, participants }), [participants, realtime]);
   const voice = useVoiceSession({
     roomId: room?.id ?? 'room_general',
     connectionId: socket.connectionId,
     publications: socket.publications.filter((publication) => publication.userId !== user?.id),
+    joinCall: socket.joinCall,
+    leaveCall: socket.leaveCall,
     updatePresence: socket.updatePresence,
     updateSpeaking: socket.updateSpeaking,
   });
+  const handledCallReplacementRef = useRef(0);
+  useEffect(() => {
+    if (socket.callReplacementCount <= handledCallReplacementRef.current) return;
+    handledCallReplacementRef.current = socket.callReplacementCount;
+    if (voice.status !== 'idle') void voice.leave();
+  }, [socket.callReplacementCount, voice]);
   const supervisor = useCallConnectionSupervisor({
-    active: Boolean(user && activated),
+    active: Boolean(user && bootstrap),
     socket,
     voice,
   });
 
-  const supervisedVoice = useMemo(
-    () => ({
-      ...voice,
-      leave: async () => {
-        supervisor.disconnect();
-        await voice.leave();
-        supervisor.disconnected();
-        supervisor.resume();
-      },
-    }),
-    [supervisor, voice],
-  );
-
-  const activateRoom = useCallback(() => setActivated(true), []);
-
-  useEffect(() => {
-    if (!user || !activated || room || roomRequestRef.current) return;
-    setLoadError('');
-    const request = apiClient
-      .get<{ rooms: RoomView[] }>('/api/rooms')
-      .then((result) => {
-        const firstRoom = result.rooms[0] ?? null;
-        setRoom(firstRoom);
-        if (!firstRoom) setLoadError('Nenhuma sala está disponível agora.');
-      })
-      .catch(() => setLoadError('Não foi possível carregar as salas agora.'))
-      .finally(() => {
-        roomRequestRef.current = null;
-      });
-    roomRequestRef.current = request;
-  }, [activated, room, user]);
-
-  useEffect(() => {
-    const previousUserId = previousUserIdRef.current;
-    const currentUserId = user?.id ?? null;
-    previousUserIdRef.current = currentUserId;
-    if (!previousUserId || previousUserId === currentUserId) return;
-    supervisor.disconnect();
-    socket.disconnect();
-    void voice.leave();
-    setActivated(false);
-    setRoom(null);
-    setLoadError('');
-    roomRequestRef.current = null;
-  }, [socket, supervisor, user?.id, voice]);
-
   const value = useMemo<CallContextValue>(
     () => ({
-      activateRoom,
       config,
       connectionState: supervisor.state,
       loadError,
+      members,
       room,
       socket,
-      voice: supervisedVoice,
+      voice,
     }),
-    [activateRoom, config, loadError, room, socket, supervisedVoice, supervisor.state],
+    [config, loadError, members, room, socket, supervisor.state, voice],
   );
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;

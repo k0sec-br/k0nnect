@@ -55,4 +55,13 @@ export class SecurityGate extends DurableObject<Env> {
       retryAfter: Math.max(1, Math.ceil((windowStart + windowMilliseconds - now) / 1_000)),
     };
   }
+
+  consumeMany(
+    policies: { policy: string; limit: number; windowSeconds: number }[],
+    now = Date.now(),
+  ): RateLimitDecision[] {
+    return policies.map(({ policy, limit, windowSeconds }) =>
+      this.consume(policy, limit, windowSeconds, now),
+    );
+  }
 }

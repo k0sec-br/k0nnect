@@ -94,6 +94,22 @@ export class CloudflareRealtimeClient {
     return tracksResponseSchema.parse(response);
   }
 
+  async publishTracks(
+    sessionId: string,
+    sessionDescription: { type: 'offer'; sdp: string },
+    tracks: { mid: string; trackName: string }[],
+  ) {
+    const response = await this.request(
+      `/sessions/${encodeURIComponent(sessionId)}/tracks/new`,
+      'POST',
+      {
+        sessionDescription,
+        tracks: tracks.map((track) => ({ location: 'local', ...track })),
+      },
+    );
+    return tracksResponseSchema.parse(response);
+  }
+
   async subscribeTrack(
     sessionId: string,
     remoteSessionId: string,
@@ -121,6 +137,38 @@ export class CloudflareRealtimeClient {
             ...(simulcast ? { simulcast } : {}),
           },
         ],
+      },
+    );
+    return tracksResponseSchema.parse(response);
+  }
+
+  async subscribeTracks(
+    sessionId: string,
+    tracks: {
+      remoteSessionId: string;
+      remoteTrackName: string;
+      source: MediaSource;
+      preferredRid?: string;
+    }[],
+  ) {
+    const response = await this.request(
+      `/sessions/${encodeURIComponent(sessionId)}/tracks/new`,
+      'POST',
+      {
+        tracks: tracks.map((track) => ({
+          location: 'remote',
+          sessionId: track.remoteSessionId,
+          trackName: track.remoteTrackName,
+          ...(track.source === 'camera'
+            ? {
+                simulcast: {
+                  preferredRid: track.preferredRid ?? 'b',
+                  priorityOrdering: 'asciibetical',
+                  ridNotAvailable: 'asciibetical',
+                },
+              }
+            : {}),
+        })),
       },
     );
     return tracksResponseSchema.parse(response);

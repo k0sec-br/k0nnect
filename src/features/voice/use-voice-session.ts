@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { MediaEndReason, MediaPublication } from '../../../shared/protocol/room';
+import { CallConflictError } from '../rooms/use-server-realtime';
 import { mediaDevicePreferences } from './media-device-preferences';
 import { CameraManager, ScreenShareManager } from './media-capture-managers';
 import { mediaErrorMessage } from './media-errors';
@@ -37,12 +38,16 @@ export function useVoiceSession({
   roomId,
   connectionId,
   publications,
+  joinCall,
+  leaveCall,
   updatePresence,
   updateSpeaking,
 }: {
   roomId: string;
   connectionId: string | null;
   publications: MediaPublication[];
+  joinCall(channelId: string, takeover?: boolean): Promise<void>;
+  leaveCall(): Promise<void>;
   updatePresence(muted: boolean, deafened: boolean): void;
   updateSpeaking(speaking: boolean): void;
 }) {
@@ -96,6 +101,7 @@ export function useVoiceSession({
   const [recoveryAttempts, setRecoveryAttempts] = useState(0);
   const [lastRecoveryReason, setLastRecoveryReason] = useState('');
   const [reconciliationNeeded, setReconciliationNeeded] = useState(false);
+  const [callConflict, setCallConflict] = useState(false);
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -226,12 +232,26 @@ export function useVoiceSession({
     startClientRef.current = startClient;
   }, [startClient]);
 
-  const join = useCallback(async () => {
-    if (!connectionId || status !== 'idle') return;
-    userRequestedDisconnectRef.current = false;
-    sessionGenerationRef.current += 1;
-    await startClient(connectionId);
-  }, [connectionId, startClient, status]);
+  const join = useCallback(
+    async (takeover = false) => {
+      if (!connectionId || status !== 'idle') return;
+      userRequestedDisconnectRef.current = false;
+      sessionGenerationRef.current += 1;
+      setStatus('joining');
+      setError('');
+      setCallConflict(false);
+      try {
+        await joinCall(roomId, takeover);
+        const started = await startClient(connectionId);
+        if (!started) await leaveCall().catch(() => undefined);
+      } catch (caught) {
+        setStatus('idle');
+        setCallConflict(caught instanceof CallConflictError);
+        setError(caught instanceof Error ? caught.message : 'Não foi possível entrar na chamada.');
+      }
+    },
+    [connectionId, joinCall, leaveCall, roomId, startClient, status],
+  );
 
   const leave = useCallback(async () => {
     userRequestedDisconnectRef.current = true;
@@ -244,6 +264,7 @@ export function useVoiceSession({
     setRecoveryAttempts(0);
     setLastRecoveryReason('');
     setReconciliationNeeded(false);
+    setCallConflict(false);
     detectorCleanupRef.current?.();
     detectorCleanupRef.current = null;
     const client = clientRef.current;
@@ -263,9 +284,12 @@ export function useVoiceSession({
     setStatus('idle');
     voiceControlsRef.current = INITIAL_VOICE_CONTROL_STATE;
     setVoiceControls(INITIAL_VOICE_CONTROL_STATE);
-    updatePresence(false, false);
-    if (client) await client.stop();
-  }, [updatePresence]);
+    await Promise.all([client?.stop(), leaveCall().catch(() => undefined)]);
+  }, [leaveCall]);
+
+  useEffect(() => {
+    if (!connectionId && clientRef.current) void leave();
+  }, [connectionId, leave]);
 
   useEffect(() => {
     if (
@@ -288,11 +312,18 @@ export function useVoiceSession({
         void client.unsubscribe(publicationId).catch(() => undefined);
       }
     }
-    for (const publication of publications) {
-      if (subscribedPublicationIdsRef.current.has(publication.publicationId)) continue;
+    const sourcePriority = { microphone: 0, 'screen-audio': 1, 'screen-video': 2, camera: 3 };
+    const pending = publications
+      .filter((publication) => !subscribedPublicationIdsRef.current.has(publication.publicationId))
+      .sort((left, right) => sourcePriority[left.source] - sourcePriority[right.source]);
+    for (const publication of pending) {
       subscribedPublicationIdsRef.current.add(publication.publicationId);
-      void client.subscribe(publication).catch((caught) => {
-        subscribedPublicationIdsRef.current.delete(publication.publicationId);
+    }
+    if (pending.length > 0) {
+      void client.subscribeMany(pending).catch((caught) => {
+        for (const publication of pending) {
+          subscribedPublicationIdsRef.current.delete(publication.publicationId);
+        }
         setError(mediaErrorMessage(caught));
       });
     }
@@ -566,7 +597,15 @@ export function useVoiceSession({
       if (!videoTrack) throw new DOMException('Tela indisponível', 'NotFoundError');
       videoTrack.contentHint = 'detail';
       setScreenState('publishing');
-      const videoPublication = await client.publishTrack(videoTrack, stream, 'screen-video');
+      const audioTrack = stream.getAudioTracks()[0];
+      const published = await client.publishTracks([
+        { track: videoTrack, stream, source: 'screen-video' },
+        ...(audioTrack ? [{ track: audioTrack, stream, source: 'screen-audio' as const }] : []),
+      ]);
+      const videoPublication = published.find(
+        (publication) => publication.source === 'screen-video',
+      );
+      if (!videoPublication) throw new DOMException('Tela indisponível', 'InvalidStateError');
       if (
         generation !== screenGenerationRef.current ||
         sessionGeneration !== sessionGenerationRef.current ||
@@ -584,13 +623,17 @@ export function useVoiceSession({
       videoTrack.addEventListener('ended', () => void stopScreenShare('track_ended'), {
         once: true,
       });
-      const audioTrack = stream.getAudioTracks()[0];
       if (
         audioTrack &&
         generation === screenGenerationRef.current &&
         sessionGeneration === sessionGenerationRef.current
       ) {
-        const audioPublication = await client.publishTrack(audioTrack, stream, 'screen-audio');
+        const audioPublication = published.find(
+          (publication) => publication.source === 'screen-audio',
+        );
+        if (!audioPublication) {
+          throw new DOMException('Áudio da tela indisponível', 'InvalidStateError');
+        }
         if (
           generation !== screenGenerationRef.current ||
           sessionGeneration !== sessionGenerationRef.current
@@ -706,36 +749,58 @@ export function useVoiceSession({
             ) {
               const screenStream = screenShareManagerRef.current?.currentStream();
               if (!screenStream) throw new DOMException('Tela indisponível', 'NotFoundError');
-              const videoPublication = await currentClient.publishTrack(
-                screenTrack,
-                screenStream,
-                'screen-video',
+              const screenAudioTrack = screenStream.getAudioTracks()[0];
+              const missingScreenTracks = [
+                { track: screenTrack, stream: screenStream, source: 'screen-video' as const },
+                ...(screenAudioTrack &&
+                screenAudioTrack.readyState !== 'ended' &&
+                !currentClient.localTrack('screen-audio')
+                  ? [
+                      {
+                        track: screenAudioTrack,
+                        stream: screenStream,
+                        source: 'screen-audio' as const,
+                      },
+                    ]
+                  : []),
+              ];
+              const screenPublications = await currentClient.publishTracks(
+                missingScreenTracks,
                 false,
               );
               setLocalMedia((current) => [
-                ...current.filter((item) => item.publication.source !== 'screen-video'),
-                { publication: videoPublication, stream: new MediaStream([screenTrack]) },
+                ...current.filter(
+                  (item) =>
+                    !screenPublications.some(
+                      (publication) => publication.source === item.publication.source,
+                    ),
+                ),
+                ...screenPublications.map((publication, index) => ({
+                  publication,
+                  stream: new MediaStream([missingScreenTracks[index]!.track]),
+                })),
               ]);
-            }
-            const screenStream = screenShareManagerRef.current?.currentStream();
-            const screenAudioTrack = screenStream?.getAudioTracks()[0];
-            if (
-              screenWantedRef.current &&
-              screenStream &&
-              screenAudioTrack &&
-              screenAudioTrack.readyState !== 'ended' &&
-              !currentClient.localTrack('screen-audio')
-            ) {
-              const audioPublication = await currentClient.publishTrack(
-                screenAudioTrack,
-                screenStream,
-                'screen-audio',
-                false,
-              );
-              setLocalMedia((current) => [
-                ...current.filter((item) => item.publication.source !== 'screen-audio'),
-                { publication: audioPublication, stream: new MediaStream([screenAudioTrack]) },
-              ]);
+            } else {
+              const screenStream = screenShareManagerRef.current?.currentStream();
+              const screenAudioTrack = screenStream?.getAudioTracks()[0];
+              if (
+                screenWantedRef.current &&
+                screenStream &&
+                screenAudioTrack &&
+                screenAudioTrack.readyState !== 'ended' &&
+                !currentClient.localTrack('screen-audio')
+              ) {
+                const audioPublication = await currentClient.publishTrack(
+                  screenAudioTrack,
+                  screenStream,
+                  'screen-audio',
+                  false,
+                );
+                setLocalMedia((current) => [
+                  ...current.filter((item) => item.publication.source !== 'screen-audio'),
+                  { publication: audioPublication, stream: new MediaStream([screenAudioTrack]) },
+                ]);
+              }
             }
             setConnectionSnapshot(snapshot);
             setStatus('connected');
@@ -808,28 +873,29 @@ export function useVoiceSession({
           const screenTrack = screenStream?.getVideoTracks()[0];
           if (screenStream && screenTrack && screenTrack.readyState !== 'ended') {
             try {
-              const videoPublication = await recoveredClient.publishTrack(
-                screenTrack,
-                screenStream,
-                'screen-video',
+              const audioTrack = screenStream.getAudioTracks()[0];
+              const recoveredScreenTracks = [
+                { track: screenTrack, stream: screenStream, source: 'screen-video' as const },
+                ...(audioTrack && audioTrack.readyState !== 'ended'
+                  ? [
+                      {
+                        track: audioTrack,
+                        stream: screenStream,
+                        source: 'screen-audio' as const,
+                      },
+                    ]
+                  : []),
+              ];
+              const publications = await recoveredClient.publishTracks(
+                recoveredScreenTracks,
                 false,
               );
-              const recoveredScreenMedia: MediaStreamView[] = [
-                { publication: videoPublication, stream: new MediaStream([screenTrack]) },
-              ];
-              const audioTrack = screenStream.getAudioTracks()[0];
-              if (audioTrack && audioTrack.readyState !== 'ended') {
-                const audioPublication = await recoveredClient.publishTrack(
-                  audioTrack,
-                  screenStream,
-                  'screen-audio',
-                  false,
-                );
-                recoveredScreenMedia.push({
-                  publication: audioPublication,
-                  stream: new MediaStream([audioTrack]),
-                });
-              }
+              const recoveredScreenMedia: MediaStreamView[] = publications.map(
+                (publication, index) => ({
+                  publication,
+                  stream: new MediaStream([recoveredScreenTracks[index]!.track]),
+                }),
+              );
               setLocalMedia((current) => [
                 ...current.filter(
                   (item) =>
@@ -874,6 +940,7 @@ export function useVoiceSession({
   );
 
   return {
+    callConflict,
     cameraState,
     cameras,
     changeCamera,
@@ -897,6 +964,7 @@ export function useVoiceSession({
     connectionSnapshot,
     error,
     join,
+    takeoverCall: () => join(true),
     leave,
     localMedia,
     lastRecoveryReason,

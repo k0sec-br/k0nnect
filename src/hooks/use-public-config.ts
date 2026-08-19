@@ -1,21 +1,6 @@
-import { useEffect, useState } from 'react';
-
-import { apiClient } from '../lib/api-client';
-
-export interface PublicConfig {
-  registrationMode: 'disabled' | 'invite' | 'public';
-  realtimeEnabled: boolean;
-  turnstileEnabled: boolean;
-  turnstileSiteKey: string | null;
-}
+import type { PublicConfig } from '../../shared/types/api';
+import { useAuth } from '../features/auth/auth-context';
 
 export function usePublicConfig(): PublicConfig | null {
-  const [config, setConfig] = useState<PublicConfig | null>(null);
-  useEffect(() => {
-    apiClient
-      .get<PublicConfig>('/api/config')
-      .then(setConfig)
-      .catch(() => setConfig(null));
-  }, []);
-  return config;
+  return useAuth().config;
 }

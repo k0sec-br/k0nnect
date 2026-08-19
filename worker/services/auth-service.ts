@@ -206,7 +206,7 @@ export async function login(
 export async function recoverAccount(
   env: Env,
   input: RecoverAccountInput,
-): Promise<{ recoveryCodes: string[] }> {
+): Promise<{ recoveryCodes: string[]; userId: string }> {
   const user = await findUserByUsername(env.DB, input.username);
   if (!user) {
     await performDummyPasswordVerification(input.newPassword, env.PASSWORD_PEPPER);
@@ -266,7 +266,7 @@ export async function recoverAccount(
   if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
     throw new AppError('RECOVERY_INVALID', 400);
   }
-  return { recoveryCodes: newCodes };
+  return { recoveryCodes: newCodes, userId: user.id };
 }
 
 export async function regenerateRecoveryCodes(

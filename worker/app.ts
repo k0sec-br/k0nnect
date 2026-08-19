@@ -2,11 +2,12 @@ import { Hono } from 'hono';
 
 import type { AppBindings } from './app-types';
 import { AppError } from './errors/app-error';
-import { failure, success } from './http';
+import { failure } from './http';
 import { adminRoutes } from './routes/admin-routes';
 import { authRoutes } from './routes/auth-routes';
+import { bootstrapRoute } from './routes/bootstrap-route';
 import { realtimeRoutes } from './routes/realtime-routes';
-import { roomRoutes } from './routes/room-routes';
+import { serverRoutes } from './routes/server-routes';
 import { applySecurityHeaders } from './security/headers';
 import { logSecurityEvent } from './security/logger';
 import { validateRequestOrigin } from './security/origin';
@@ -23,7 +24,17 @@ app.use('/api/*', async (context, next) => {
 });
 
 app.use('/api/*', async (context, next) => {
-  await enforceRateLimit(context.env, `ip:${requestIp(context.req.raw)}`, RATE_LIMIT_POLICIES.api);
+  const path = new URL(context.req.url).pathname;
+  const hasDedicatedRealtimeLimit =
+    context.req.header('Upgrade')?.toLowerCase() === 'websocket' ||
+    path === '/api/realtime/session';
+  if (!hasDedicatedRealtimeLimit) {
+    await enforceRateLimit(
+      context.env,
+      `ip:${requestIp(context.req.raw)}`,
+      RATE_LIMIT_POLICIES.api,
+    );
+  }
   const method = context.req.method;
   if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
     validateRequestOrigin(context.req.raw, context.env);
@@ -31,18 +42,11 @@ app.use('/api/*', async (context, next) => {
   await next();
 });
 
-app.get('/api/config', (context) =>
-  success(context, {
-    registrationMode: context.env.REGISTRATION_MODE,
-    realtimeEnabled: context.env.REALTIME_ENABLED === 'true',
-    turnstileEnabled: context.env.TURNSTILE_ENABLED === 'true',
-    turnstileSiteKey: context.env.TURNSTILE_SITE_KEY || null,
-  }),
-);
+app.get('/api/bootstrap', bootstrapRoute);
 
 app.route('/api/auth', authRoutes);
 app.route('/api/admin', adminRoutes);
-app.route('/api/rooms', roomRoutes);
+app.route('/api/servers', serverRoutes);
 app.route('/api/realtime', realtimeRoutes);
 
 app.notFound((context) => failure(context, new AppError('INTERNAL_ERROR', 404)));

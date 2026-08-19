@@ -41,6 +41,13 @@ authRoutes.post('/register-invite', async (context) => {
   );
   if (limit.count >= 3) await verifyTurnstile(context.env, input.turnstileToken, 'register');
   const result = await registerWithInvite(context.env, input);
+  context.executionCtx.waitUntil(
+    context.env.SERVER_REALTIME.getByName('k0sec').announceMember('member.added', {
+      id: result.user.id,
+      displayName: result.user.displayName,
+      role: result.user.role,
+    }),
+  );
   writeSessionCookie(context, result.sessionToken);
   return success(
     context,
@@ -73,7 +80,11 @@ authRoutes.post('/recover', async (context) => {
   if (Math.max(ipLimit.count, accountLimit.count) >= 3) {
     await verifyTurnstile(context.env, input.turnstileToken, 'recover');
   }
-  return success(context, await recoverAccount(context.env, input));
+  const result = await recoverAccount(context.env, input);
+  context.executionCtx.waitUntil(
+    context.env.SERVER_REALTIME.getByName('k0sec').disconnectUser(result.userId),
+  );
+  return success(context, { recoveryCodes: result.recoveryCodes });
 });
 
 authRoutes.get('/session', async (context) => {
@@ -87,6 +98,9 @@ authRoutes.post('/logout', async (context) => {
   const authenticated = await requireSession(context);
   await verifyCsrf(context, authenticated);
   await logoutSession(context.env, authenticated.session.id);
+  context.executionCtx.waitUntil(
+    context.env.SERVER_REALTIME.getByName('k0sec').disconnectSession(authenticated.session.id),
+  );
   clearSessionCookie(context);
   return success(context, { loggedOut: true });
 });
@@ -95,6 +109,9 @@ authRoutes.post('/logout-all', async (context) => {
   const authenticated = await requireSession(context);
   await verifyCsrf(context, authenticated);
   await logoutAllSessions(context.env, authenticated.user.id);
+  context.executionCtx.waitUntil(
+    context.env.SERVER_REALTIME.getByName('k0sec').disconnectUser(authenticated.user.id),
+  );
   clearSessionCookie(context);
   return success(context, { loggedOut: true });
 });
@@ -109,6 +126,12 @@ authRoutes.post('/recovery-codes/regenerate', async (context) => {
   await verifyCsrf(context, authenticated);
   const input = await parseJson(context, regenerateRecoveryCodesSchema);
   const result = await regenerateRecoveryCodes(context.env, authenticated, input.password);
+  context.executionCtx.waitUntil(
+    context.env.SERVER_REALTIME.getByName('k0sec').disconnectSession(
+      authenticated.session.id,
+      true,
+    ),
+  );
   writeSessionCookie(context, result.sessionToken);
   return success(context, { recoveryCodes: result.recoveryCodes, csrfToken: result.csrfToken });
 });

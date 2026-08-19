@@ -33,8 +33,10 @@ export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
     .object({
       action: z.literal('publish'),
       ...sessionOwnerFields,
-      source: mediaSourceSchema,
-      mid: transceiverMidSchema,
+      tracks: z
+        .array(z.object({ source: mediaSourceSchema, mid: transceiverMidSchema }).strict())
+        .min(1)
+        .max(4),
       sessionDescription: offerSchema,
     })
     .strict(),
@@ -42,8 +44,7 @@ export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
     .object({
       action: z.literal('subscribe'),
       ...sessionOwnerFields,
-      publicationId: publicationIdSchema,
-      preferredRid: z.enum(['a', 'b', 'c']).optional(),
+      publicationIds: z.array(publicationIdSchema).min(1).max(32),
     })
     .strict(),
   z
@@ -67,9 +68,6 @@ export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
       ...sessionOwnerFields,
       publicationId: publicationIdSchema,
     })
-    .strict(),
-  z
-    .object({ action: z.literal('turn'), roomId: roomIdSchema, connectionId: connectionIdSchema })
     .strict(),
 ]);
 

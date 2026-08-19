@@ -19,11 +19,18 @@
   ],
   "durable_objects": {
     "bindings": [
-      { "name": "VOICE_ROOMS", "class_name": "VoiceRoom" },
+      { "name": "SERVER_REALTIME", "class_name": "ServerRealtime" },
       { "name": "SECURITY_GATES", "class_name": "SecurityGate" },
     ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VoiceRoom", "SecurityGate"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["VoiceRoom", "SecurityGate"] },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["ServerRealtime"],
+      "deleted_classes": ["VoiceRoom"],
+    },
+  ],
   "triggers": { "crons": ["0 4 * * *"] },
   "vars": {
     "ENVIRONMENT": "development",
@@ -43,7 +50,7 @@
       "routes": [{ "pattern": "connect.k0sec.org", "custom_domain": true }],
       "durable_objects": {
         "bindings": [
-          { "name": "VOICE_ROOMS", "class_name": "VoiceRoom" },
+          { "name": "SERVER_REALTIME", "class_name": "ServerRealtime" },
           { "name": "SECURITY_GATES", "class_name": "SecurityGate" },
         ],
       },
