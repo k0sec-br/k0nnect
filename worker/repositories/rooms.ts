@@ -8,11 +8,17 @@ interface RoomRow {
   position: number;
 }
 
-export async function listVoiceRooms(database: D1Database): Promise<RoomView[]> {
+export async function listVoiceRooms(database: D1Database, userId: string): Promise<RoomView[]> {
   const result = await database
     .prepare(
-      "SELECT id, slug, name, kind, position FROM rooms WHERE kind = 'voice' ORDER BY position, name",
+      `SELECT r.id, r.slug, r.name, r.kind, r.position
+       FROM conversation_members cm
+       JOIN conversations c ON c.id = cm.conversation_id
+       JOIN rooms r ON r.id = c.call_room_id
+       WHERE cm.user_id = ? AND cm.removed_at IS NULL AND r.kind = 'voice'
+       ORDER BY c.is_default DESC, r.name`,
     )
+    .bind(userId)
     .all<RoomRow>();
   return result.results.map((room) => ({ ...room, kind: 'voice' }));
 }

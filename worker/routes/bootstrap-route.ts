@@ -5,6 +5,7 @@ import { loadSession, rotateCsrfToken } from '../auth/session';
 import type { AppBindings } from '../app-types';
 import { success } from '../http';
 import { listVoiceRooms } from '../repositories/rooms';
+import { listSocialBootstrap } from '../repositories/social';
 import { listActiveMembers } from '../repositories/users';
 
 export const PRIMARY_SERVER = { id: 'k0sec', name: 'K0Sec' } as const;
@@ -25,10 +26,11 @@ export async function bootstrapRoute(context: Context<AppBindings>) {
     return success(context, { authenticated: false, config } satisfies BootstrapView);
   }
 
-  const [csrfToken, channels, members] = await Promise.all([
+  const [csrfToken, channels, members, social] = await Promise.all([
     rotateCsrfToken(context.env, authenticated.session.id),
-    listVoiceRooms(context.env.DB),
+    listVoiceRooms(context.env.DB, authenticated.user.id),
     listActiveMembers(context.env.DB),
+    listSocialBootstrap(context.env.DB, authenticated.user.id),
   ]);
   return success(context, {
     authenticated: true,
@@ -38,6 +40,7 @@ export async function bootstrapRoute(context: Context<AppBindings>) {
     server: PRIMARY_SERVER,
     channels,
     members,
+    ...social,
     capabilities: {
       manageInvites: authenticated.user.role === 'owner' || authenticated.user.role === 'admin',
     },

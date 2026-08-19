@@ -44,6 +44,7 @@ authRoutes.post('/register-invite', async (context) => {
   context.executionCtx.waitUntil(
     context.env.SERVER_REALTIME.getByName('k0sec').announceMember('member.added', {
       id: result.user.id,
+      username: result.user.username,
       displayName: result.user.displayName,
       role: result.user.role,
     }),

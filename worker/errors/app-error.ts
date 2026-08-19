@@ -10,6 +10,8 @@ const USER_MESSAGES = {
   RECOVERY_INVALID: 'Não foi possível validar essas informações.',
   REALTIME_DISABLED: 'A comunicação de voz está temporariamente indisponível.',
   ROOM_UNAVAILABLE: 'Esta sala não está disponível agora.',
+  SOCIAL_UNAVAILABLE: 'Este usuário, convite ou grupo não está disponível.',
+  MESSAGE_UNAVAILABLE: 'Esta mensagem não está disponível.',
   VALIDATION_ERROR: 'Revise as informações preenchidas e tente novamente.',
   INTERNAL_ERROR: 'Não foi possível concluir esta ação agora. Tente novamente em alguns instantes.',
 } as const;

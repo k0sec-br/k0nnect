@@ -96,6 +96,10 @@ export async function registerWithInvite(
          WHERE id = ? AND token_hash = ? AND used_at IS NULL AND revoked_at IS NULL
            AND expires_at > ?`,
       ).bind(userId, now, userId, userId, userId, now, invite.id, inviteHash, now),
+      env.DB.prepare(
+        `INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at)
+         SELECT 'group_k0sec', ?, 'member', ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)`,
+      ).bind(userId, now, userId),
       ...recoveryRows.map((row) =>
         env.DB.prepare(
           `INSERT INTO recovery_codes (id, user_id, code_hash, created_at)
@@ -118,7 +122,11 @@ export async function registerWithInvite(
       ),
     ];
     const results = await env.DB.batch(statements);
-    if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1) {
+    if (
+      results[0]?.meta.changes !== 1 ||
+      results[1]?.meta.changes !== 1 ||
+      results[2]?.meta.changes !== 1
+    ) {
       throw new AppError('INVITE_UNAVAILABLE', 400);
     }
   } catch (error) {

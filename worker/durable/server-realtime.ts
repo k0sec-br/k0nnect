@@ -15,7 +15,12 @@ import {
   type ServerRoomMessage,
 } from '../../shared/protocol/room';
 import type { MemberView } from '../../shared/types/api';
+import type { ChatMessageView, SocialStateView } from '../../shared/types/api';
+import { sha256 } from '../crypto/tokens';
+import { AppError } from '../errors/app-error';
+import { listSocialBootstrap, loadRealtimeCapabilities } from '../repositories/social';
 import { CloudflareRealtimeClient } from '../realtime/cloudflare-realtime';
+import { enforceRateLimits, RATE_LIMIT_POLICIES } from '../security/rate-limit';
 
 const CONNECTION_RESUME_GRACE_MS = 45_000;
 const SUSPENDED_CONNECTION_PREFIX = 'suspended-connection:';
@@ -29,6 +34,10 @@ interface PublicationRecord extends MediaPublication {
 }
 
 interface ConnectionAttachment {
+  conversationIds: string[];
+  writableConversationIds: string[];
+  friendIds: string[];
+  callRoomIds: string[];
   channelId: string | null;
   connectionId: string;
   connectionEpoch: number;
@@ -68,6 +77,8 @@ const SOURCE_KINDS: Record<MediaSource, 'audio' | 'video'> = {
   'screen-video': 'video',
   'screen-audio': 'audio',
 };
+
+class ChatCommandError extends Error {}
 
 function toParticipant(attachment: ConnectionAttachment): CallParticipant | null {
   if (!attachment.channelId) return null;
@@ -132,7 +143,9 @@ export class ServerRealtime extends DurableObject<Env> {
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
+    const capabilities = await loadRealtimeCapabilities(this.env.DB, userId);
     const attachment: ConnectionAttachment = resumedAttachment ?? {
+      ...capabilities,
       channelId: null,
       connectionId: crypto.randomUUID(),
       connectionEpoch: 1,
@@ -157,6 +170,10 @@ export class ServerRealtime extends DurableObject<Env> {
     attachment.messageWindowStartedAt = Date.now();
     attachment.messagesInWindow = 0;
     attachment.pendingClosures ??= [];
+    attachment.conversationIds = capabilities.conversationIds;
+    attachment.writableConversationIds = capabilities.writableConversationIds;
+    attachment.friendIds = capabilities.friendIds;
+    attachment.callRoomIds = capabilities.callRoomIds;
     attachment.superseded = false;
     server.serializeAttachment(attachment);
     this.ctx.acceptWebSocket(server, [
@@ -165,7 +182,10 @@ export class ServerRealtime extends DurableObject<Env> {
       ...(attachment.channelId ? [`channel:${attachment.channelId}`] : []),
     ]);
     await this.ensureAlarm();
-    const snapshot = await this.snapshot();
+    const snapshot = await this.snapshot(
+      undefined,
+      attachment.channelId ? [attachment.channelId] : [],
+    );
 
     this.send(server, {
       v: REALTIME_PROTOCOL_VERSION,
@@ -230,6 +250,11 @@ export class ServerRealtime extends DurableObject<Env> {
       return;
     }
 
+    if (result.data.type === 'chat.send') {
+      await this.sendChatMessage(socket, attachment, result.data.payload);
+      return;
+    }
+
     if (result.data.type === 'call.join' || result.data.type === 'call.takeover') {
       await this.joinCall(
         socket,
@@ -258,7 +283,7 @@ export class ServerRealtime extends DurableObject<Env> {
       this.send(socket, {
         v: REALTIME_PROTOCOL_VERSION,
         type: 'state.snapshot',
-        payload: await this.snapshot(),
+        payload: await this.snapshot(undefined, attachment.channelId ? [attachment.channelId] : []),
       });
       return;
     }
@@ -270,7 +295,7 @@ export class ServerRealtime extends DurableObject<Env> {
       attachment.muted = result.data.payload.muted || attachment.deafened;
       if (attachment.muted) attachment.speaking = false;
       socket.serializeAttachment(attachment);
-      this.broadcast({
+      this.broadcastToCallRoom(attachment.channelId, {
         v: REALTIME_PROTOCOL_VERSION,
         type: 'call.member.updated',
         payload: toParticipant(attachment)!,
@@ -285,7 +310,7 @@ export class ServerRealtime extends DurableObject<Env> {
       if (speaking === attachment.speaking) return;
       attachment.speaking = speaking;
       socket.serializeAttachment(attachment);
-      this.broadcast({
+      this.broadcastToCallRoom(attachment.channelId, {
         v: REALTIME_PROTOCOL_VERSION,
         type: speaking ? 'voice.speaking' : 'voice.stopped',
         payload: { userId: attachment.userId },
@@ -365,6 +390,230 @@ export class ServerRealtime extends DurableObject<Env> {
     this.broadcast({ v: REALTIME_PROTOCOL_VERSION, type, payload: member });
   }
 
+  async refreshSocialState(
+    userIds: string[],
+    reason: 'friends' | 'groups' | 'conversations',
+  ): Promise<Record<string, SocialStateView>> {
+    const states: Record<string, SocialStateView> = {};
+    for (const userId of [...new Set(userIds)]) {
+      const [capabilities, social] = await Promise.all([
+        loadRealtimeCapabilities(this.env.DB, userId),
+        listSocialBootstrap(this.env.DB, userId),
+      ]);
+      states[userId] = social;
+      for (const socket of this.ctx.getWebSockets(`user:${userId}`)) {
+        const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+        if (!attachment) continue;
+        attachment.conversationIds = capabilities.conversationIds;
+        attachment.writableConversationIds = capabilities.writableConversationIds;
+        attachment.friendIds = capabilities.friendIds;
+        attachment.callRoomIds = capabilities.callRoomIds;
+        if (attachment.channelId && !attachment.callRoomIds.includes(attachment.channelId)) {
+          this.leaveCall(socket, attachment, undefined, 'publisher_left');
+        } else {
+          socket.serializeAttachment(attachment);
+        }
+        this.send(socket, {
+          v: REALTIME_PROTOCOL_VERSION,
+          type: 'social.changed',
+          payload: { userId, reason, ...social },
+        });
+      }
+      const suspended = await this.ctx.storage.list<SuspendedConnectionRecord>({
+        prefix: `${SUSPENDED_CONNECTION_PREFIX}${userId}:`,
+      });
+      for (const [key, record] of suspended) {
+        record.attachment.conversationIds = capabilities.conversationIds;
+        record.attachment.writableConversationIds = capabilities.writableConversationIds;
+        record.attachment.friendIds = capabilities.friendIds;
+        record.attachment.callRoomIds = capabilities.callRoomIds;
+        if (
+          record.attachment.channelId &&
+          !record.attachment.callRoomIds.includes(record.attachment.channelId)
+        ) {
+          this.finalizeCall(undefined, record.attachment, 'publisher_left');
+          record.attachment.channelId = null;
+          record.attachment.realtimeSessionId = null;
+          record.attachment.publications = [];
+          record.attachment.pendingClosures = [];
+          record.attachment.subscriptions = [];
+        }
+        await this.ctx.storage.put(key, record);
+      }
+    }
+    return states;
+  }
+
+  announceChatUpdate(message: ChatMessageView): void {
+    if (message.deletedAt) {
+      this.broadcastToConversation(message.conversationId, {
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.deleted',
+        payload: {
+          id: message.id,
+          conversationId: message.conversationId,
+          senderId: message.senderId,
+          deletedAt: message.deletedAt,
+        },
+      });
+    } else if (message.content && message.editedAt) {
+      this.broadcastToConversation(message.conversationId, {
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.updated',
+        payload: {
+          id: message.id,
+          conversationId: message.conversationId,
+          senderId: message.senderId,
+          content: message.content,
+          editedAt: message.editedAt,
+        },
+      });
+    }
+  }
+
+  private async sendChatMessage(
+    socket: WebSocket,
+    attachment: ConnectionAttachment,
+    payload: {
+      conversationId?: string | undefined;
+      recipientUserId?: string | undefined;
+      clientMessageId: string;
+      content: string;
+    },
+  ): Promise<void> {
+    try {
+      await enforceRateLimits(this.env, attachment.userId, [
+        RATE_LIMIT_POLICIES.chatBurst,
+        RATE_LIMIT_POLICIES.chatSustained,
+      ]);
+      const content = payload.content;
+      let conversationId = payload.conversationId;
+      let message: ChatMessageView | null = null;
+
+      if (payload.recipientUserId) {
+        if (!attachment.friendIds.includes(payload.recipientUserId)) {
+          throw new ChatCommandError('Envio permitido apenas entre amigos.');
+        }
+        const ids = [attachment.userId, payload.recipientUserId].sort();
+        const pairKey = `${ids[0]}:${ids[1]}`;
+        conversationId = `dm_${await sha256(pairKey)}`;
+        const now = new Date().toISOString();
+        await this.env.DB.batch([
+          this.env.DB.prepare(
+            `INSERT INTO conversations (
+               id, kind, name, owner_user_id, dm_pair_key, call_room_id,
+               is_default, created_at, updated_at
+             ) VALUES (?, 'dm', NULL, NULL, ?, NULL, 0, ?, ?)
+             ON CONFLICT(dm_pair_key) DO NOTHING`,
+          ).bind(conversationId, pairKey, now, now),
+          this.env.DB.prepare(
+            `INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at)
+             VALUES (?, ?, 'member', ?)
+             ON CONFLICT(conversation_id, user_id) DO NOTHING`,
+          ).bind(conversationId, attachment.userId, now),
+          this.env.DB.prepare(
+            `INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at)
+             VALUES (?, ?, 'member', ?)
+             ON CONFLICT(conversation_id, user_id) DO NOTHING`,
+          ).bind(conversationId, payload.recipientUserId, now),
+        ]);
+        await this.refreshSocialState(
+          [attachment.userId, payload.recipientUserId],
+          'conversations',
+        );
+        attachment.conversationIds = [...new Set([...attachment.conversationIds, conversationId])];
+        attachment.writableConversationIds = [
+          ...new Set([...attachment.writableConversationIds, conversationId]),
+        ];
+      }
+
+      if (!conversationId || !attachment.writableConversationIds.includes(conversationId)) {
+        throw new ChatCommandError('Você não pode enviar mensagens nesta conversa.');
+      }
+
+      const createdAt = new Date().toISOString();
+      const inserted = await this.env.DB.prepare(
+        `INSERT INTO messages (
+           conversation_id, sender_id, client_message_id, content, created_at
+         ) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(sender_id, client_message_id) DO NOTHING
+         RETURNING id, conversation_id, sender_id, client_message_id, content,
+                   created_at, edited_at, deleted_at`,
+      )
+        .bind(conversationId, attachment.userId, payload.clientMessageId, content, createdAt)
+        .first<{
+          id: number;
+          conversation_id: string;
+          sender_id: string;
+          client_message_id: string;
+          content: string | null;
+          created_at: string;
+          edited_at: string | null;
+          deleted_at: string | null;
+        }>();
+      const row =
+        inserted ??
+        (await this.env.DB.prepare(
+          `SELECT id, conversation_id, sender_id, client_message_id, content,
+                  created_at, edited_at, deleted_at
+           FROM messages WHERE sender_id = ? AND client_message_id = ? LIMIT 1`,
+        )
+          .bind(attachment.userId, payload.clientMessageId)
+          .first<{
+            id: number;
+            conversation_id: string;
+            sender_id: string;
+            client_message_id: string;
+            content: string | null;
+            created_at: string;
+            edited_at: string | null;
+            deleted_at: string | null;
+          }>());
+      if (!row?.content || row.conversation_id !== conversationId) {
+        throw new ChatCommandError('Não foi possível persistir a mensagem.');
+      }
+      const canonicalContent = row.content;
+      message = {
+        id: row.id,
+        conversationId: row.conversation_id,
+        senderId: row.sender_id,
+        clientMessageId: row.client_message_id,
+        content: canonicalContent,
+        createdAt: row.created_at,
+        editedAt: row.edited_at,
+        deletedAt: row.deleted_at,
+      };
+      this.broadcastToConversation(conversationId, {
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.message',
+        payload: {
+          id: message.id,
+          conversationId: message.conversationId,
+          senderId: message.senderId,
+          clientMessageId: message.clientMessageId,
+          content: canonicalContent,
+          createdAt: message.createdAt,
+          editedAt: null,
+          deletedAt: null,
+        },
+      });
+    } catch (error) {
+      this.send(socket, {
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'error',
+        payload: {
+          message:
+            error instanceof AppError
+              ? error.userMessage
+              : error instanceof ChatCommandError
+                ? error.message
+                : 'Não foi possível enviar a mensagem.',
+          requestId: payload.clientMessageId,
+        },
+      });
+    }
+  }
+
   private async joinCall(
     socket: WebSocket,
     attachment: ConnectionAttachment,
@@ -372,12 +621,7 @@ export class ServerRealtime extends DurableObject<Env> {
     requestId: string,
     takeover: boolean,
   ): Promise<void> {
-    const channel = await this.env.DB.prepare(
-      "SELECT id FROM rooms WHERE id = ? AND kind = 'voice' LIMIT 1",
-    )
-      .bind(channelId)
-      .first<{ id: string }>();
-    if (!channel) {
+    if (!attachment.callRoomIds.includes(channelId)) {
       this.send(socket, {
         v: REALTIME_PROTOCOL_VERSION,
         type: 'error',
@@ -420,7 +664,8 @@ export class ServerRealtime extends DurableObject<Env> {
     socket.serializeAttachment(attachment);
 
     if (newlyJoined) {
-      this.broadcast(
+      this.broadcastToCallRoom(
+        channelId,
         {
           v: REALTIME_PROTOCOL_VERSION,
           type: 'call.member.joined',
@@ -477,7 +722,7 @@ export class ServerRealtime extends DurableObject<Env> {
     void socket;
     this.ctx.waitUntil(this.cleanupRealtime(departing));
     this.broadcastUnpublished(departing, reason);
-    this.broadcast({
+    this.broadcastToCallRoom(attachment.channelId, {
       v: REALTIME_PROTOCOL_VERSION,
       type: 'call.member.left',
       payload: {
@@ -608,7 +853,8 @@ export class ServerRealtime extends DurableObject<Env> {
     record.pending = false;
     connection.socket.serializeAttachment(connection.attachment);
     const publication = toPublicPublication(record);
-    this.broadcast({
+    if (!connection.attachment.channelId) return null;
+    this.broadcastToCallRoom(connection.attachment.channelId, {
       v: REALTIME_PROTOCOL_VERSION,
       type: 'media.published',
       payload: publication,
@@ -636,7 +882,8 @@ export class ServerRealtime extends DurableObject<Env> {
     });
     connection.socket.serializeAttachment(connection.attachment);
     for (const publication of publications) {
-      this.broadcast({
+      if (!connection.attachment.channelId) return null;
+      this.broadcastToCallRoom(connection.attachment.channelId, {
         v: REALTIME_PROTOCOL_VERSION,
         type: 'media.published',
         payload: publication,
@@ -831,7 +1078,8 @@ export class ServerRealtime extends DurableObject<Env> {
       (item) => item.publicationId !== publicationId,
     );
     connection.socket.serializeAttachment(connection.attachment);
-    this.broadcast({
+    if (!connection.attachment.channelId) return false;
+    this.broadcastToCallRoom(connection.attachment.channelId, {
       v: REALTIME_PROTOCOL_VERSION,
       type: 'media.unpublished',
       payload: { publicationId, userId, source: record.source, reason },
@@ -974,7 +1222,10 @@ export class ServerRealtime extends DurableObject<Env> {
     return null;
   }
 
-  private async snapshot(channelId?: string): Promise<{
+  private async snapshot(
+    channelId?: string,
+    allowedRoomIds?: string[],
+  ): Promise<{
     onlineUserIds: string[];
     participants: CallParticipant[];
     publications: MediaPublication[];
@@ -991,7 +1242,13 @@ export class ServerRealtime extends DurableObject<Env> {
     const participants: CallParticipant[] = [];
     const publications: MediaPublication[] = [];
     for (const connection of connections) {
-      if (!connection.channelId || (channelId && connection.channelId !== channelId)) continue;
+      if (
+        !connection.channelId ||
+        (channelId && connection.channelId !== channelId) ||
+        (allowedRoomIds && !allowedRoomIds.includes(connection.channelId))
+      ) {
+        continue;
+      }
       if (!seenCallUsers.has(connection.userId)) {
         const participant = toParticipant(connection);
         if (participant) participants.push(participant);
@@ -1192,7 +1449,8 @@ export class ServerRealtime extends DurableObject<Env> {
   private broadcastUnpublished(attachment: ConnectionAttachment, reason: MediaEndReason): void {
     for (const publication of attachment.publications) {
       if (publication.pending) continue;
-      this.broadcast({
+      if (!attachment.channelId) continue;
+      this.broadcastToCallRoom(attachment.channelId, {
         v: REALTIME_PROTOCOL_VERSION,
         type: 'media.unpublished',
         payload: {
@@ -1215,6 +1473,25 @@ export class ServerRealtime extends DurableObject<Env> {
 
   private send(socket: WebSocket, message: ServerRoomMessage): void {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+  }
+
+  private broadcastToConversation(conversationId: string, message: ServerRoomMessage): void {
+    for (const socket of this.ctx.getWebSockets()) {
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      if (attachment?.conversationIds.includes(conversationId)) this.send(socket, message);
+    }
+  }
+
+  private broadcastToCallRoom(
+    channelId: string,
+    message: ServerRoomMessage,
+    excludedSocket?: WebSocket,
+  ): void {
+    for (const socket of this.ctx.getWebSockets()) {
+      if (socket === excludedSocket) continue;
+      const attachment = socket.deserializeAttachment() as ConnectionAttachment | null;
+      if (attachment?.channelId === channelId) this.send(socket, message);
+    }
   }
 
   private broadcast(message: ServerRoomMessage, excludedSocket?: WebSocket): void {

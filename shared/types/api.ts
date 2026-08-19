@@ -30,8 +30,58 @@ export interface ServerView {
 
 export interface MemberView {
   id: string;
+  username: string;
   displayName: string;
   role: UserRole;
+}
+
+export interface SocialUserView {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
+export interface FriendView extends SocialUserView {
+  since: string;
+}
+
+export interface FriendRequestView extends SocialUserView {
+  direction: 'incoming' | 'outgoing';
+  createdAt: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  kind: 'dm' | 'group';
+  name: string;
+  ownerUserId: string | null;
+  callRoomId: string | null;
+  isDefault: boolean;
+  members: SocialUserView[];
+  lastMessage: {
+    id: number;
+    senderId: string;
+    createdAt: string;
+    deleted: boolean;
+  } | null;
+}
+
+export interface ChatMessageView {
+  id: number;
+  conversationId: string;
+  senderId: string;
+  clientMessageId: string;
+  content: string | null;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+  deliveryState?: 'sending' | 'sent' | 'failed';
+}
+
+export interface SocialStateView {
+  friends: FriendView[];
+  friendRequests: FriendRequestView[];
+  conversations: ConversationSummary[];
 }
 
 export interface PublicConfig {
@@ -54,6 +104,9 @@ export type BootstrapView =
       server: ServerView;
       channels: RoomView[];
       members: MemberView[];
+      friends: FriendView[];
+      friendRequests: FriendRequestView[];
+      conversations: ConversationSummary[];
       capabilities: {
         manageInvites: boolean;
       };

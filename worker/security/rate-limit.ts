@@ -20,6 +20,13 @@ export const RATE_LIMIT_POLICIES = {
   realtimeMedia: { name: 'realtime-media', limit: 60, windowSeconds: 60 },
   websocket: { name: 'websocket', limit: 20, windowSeconds: 60 },
   adminInvite: { name: 'admin-invite', limit: 10, windowSeconds: 3_600 },
+  socialMutation: { name: 'social-mutation', limit: 30, windowSeconds: 60 },
+  friendRequest: { name: 'friend-request', limit: 10, windowSeconds: 600 },
+  userSearch: { name: 'user-search', limit: 20, windowSeconds: 600 },
+  groupCreate: { name: 'group-create', limit: 5, windowSeconds: 3_600 },
+  chatHistory: { name: 'chat-history', limit: 60, windowSeconds: 60 },
+  chatBurst: { name: 'chat-burst', limit: 5, windowSeconds: 5 },
+  chatSustained: { name: 'chat-sustained', limit: 60, windowSeconds: 60 },
 } satisfies Record<string, RateLimitPolicy>;
 
 export async function enforceRateLimit(

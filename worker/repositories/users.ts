@@ -55,14 +55,15 @@ export async function findUserByUsername(
 export async function listActiveMembers(database: D1Database): Promise<MemberView[]> {
   const result = await database
     .prepare(
-      `SELECT id, display_name, role
+      `SELECT id, username, display_name, role
        FROM users
        WHERE status = 'active'
        ORDER BY display_name COLLATE NOCASE, username COLLATE NOCASE`,
     )
-    .all<{ id: string; display_name: string; role: UserRole }>();
+    .all<{ id: string; username: string; display_name: string; role: UserRole }>();
   return result.results.map((member) => ({
     id: member.id,
+    username: member.username,
     displayName: member.display_name,
     role: member.role,
   }));
