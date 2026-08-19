@@ -20,6 +20,6 @@ Outros headers incluem HSTS em produção, Referrer-Policy `no-referrer`, Permis
 
 Logs da aplicação usam evento, request ID, rota, status e classe do erro. Não incluem corpos, cookies, tokens, usernames, SDP, ICE candidates ou IPs. Erros inesperados são sanitizados antes da resposta.
 
-O `VoiceRoom` revalida sessões abertas a cada minuto. Sessões revogadas, expiradas, ociosas ou vinculadas a contas desabilitadas têm o WebSocket encerrado. Ao desconectar, o Durable Object solicita o fechamento best-effort das tracks conhecidas no Realtime.
+O `ServerRealtime` recebe revogações de logout e recuperação por RPC e agenda revalidação no limite real de expiração ou ociosidade da sessão. Sessões inválidas e contas desabilitadas têm o WebSocket encerrado. Ao desconectar, o Durable Object solicita o fechamento best-effort das tracks conhecidas no Realtime.
 
 Antes de um deploy, execute `pnpm check`, `pnpm test:security`, `pnpm test:e2e`, `pnpm audit:dependencies` e a busca de secrets descrita em [deployment.md](deployment.md). O registro da auditoria está em [security-audit.md](security-audit.md).

@@ -24,7 +24,7 @@ No cadastro são gerados dez códigos de recuperação com 160 bits legíveis ca
 
 O navegador recebe `__Host-k0nnect_session`, com `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` e sem `Domain`. D1 guarda apenas o hash. A sessão expira após sete dias ociosa ou trinta dias absolutos; `last_seen_at` é atualizado no máximo a cada cinco minutos.
 
-Login rotaciona a sessão atual. Logout revoga uma; logout-all revoga todas. Contas disabled não autenticam. WebSockets abertos revalidam a sessão a cada minuto. O token CSRF é independente, rotacionado na leitura da sessão e mantido somente em memória pelo frontend.
+Login rotaciona a sessão atual. Logout revoga uma; logout-all revoga todas. Contas disabled não autenticam. O `ServerRealtime` recebe revogações por evento e revalida cada WebSocket no limite real de validade ou ociosidade da sessão. O token CSRF é independente, rotacionado no bootstrap autenticado e mantido somente em memória pelo frontend.
 
 ## Antiabuso
 

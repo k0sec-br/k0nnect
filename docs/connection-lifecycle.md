@@ -38,14 +38,14 @@ sinal de falha
   → deduplicar no supervisor
   → aguardar grace quando a falha é transitória
   → validar rede e retomar WebSocket
-  → aplicar room.ready autoritativo
+  → aplicar server.ready autoritativo
   → verificar PeerConnection + ICE + tracks desejadas
   → manter sessão saudável ou reconstruir sessão SFU
   → republicar mídia ainda desejada
   → reassinar publicações remotas
 ```
 
-Gerações impedem callbacks de sockets, sessões e operações antigas de alterar o estado atual. Sinais simultâneos apenas marcam uma reconciliação pendente. O watchdog roda a cada 15 segundos em foreground e 45 segundos em background e só age diante de liveness vencida ou estado de mídia não saudável.
+Gerações impedem callbacks de sockets, sessões e operações antigas de alterar o estado atual. Sinais simultâneos apenas marcam uma reconciliação pendente. Eventos do WebSocket, PeerConnection, ICE, rede e lifecycle acionam a reconciliação; não existe watchdog periódico.
 
 ## Tela
 
@@ -86,7 +86,7 @@ Qualquer falha anterior à substituição encerra apenas a nova captura e manté
 
 ## Background e limites da plataforma
 
-O aplicativo não encerra áudio, câmera, tela ou WebSocket ao ocultar a página. Timers adaptativos reduzem custo e toleram throttling. Ao receber `visibilitychange` para visible, `pageshow`, `resume` ou `online`, o supervisor reconcilia imediatamente.
+O aplicativo não encerra áudio, câmera, tela ou WebSocket ao ocultar a página. Ao receber `visibilitychange` para visible, `pageshow`, `resume` ou `online`, o supervisor reconcilia imediatamente sem polling.
 
 Navegadores e sistemas operacionais podem suspender JavaScript, rede, microfone, câmera ou captura de tela. O aplicativo não consegue impedir essa decisão. Após a execução voltar, ele detecta estado obsoleto e converge para a intenção possível; permissões revogadas e screen share encerrado exigem nova ação explícita do usuário.
 

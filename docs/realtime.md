@@ -2,47 +2,55 @@
 
 ## Presença e protocolo
 
-Cada sala usa um Durable Object `VoiceRoom`. O endpoint WebSocket exige sessão, Origin exata, sala existente e rate limit antes do upgrade. A identidade vem da sessão; conexões duplicadas do mesmo usuário substituem a anterior. Attachments serializados permitem WebSocket Hibernation sem estado global mutável.
+Cada servidor usa um Durable Object `ServerRealtime`. O endpoint `/api/servers/:serverId/socket` exige sessão válida, Origin exata, servidor conhecido e rate limit antes do upgrade. A identidade é derivada da sessão autenticada e nunca do payload do cliente.
 
-O protocolo versionado (`v: 3`) aceita heartbeat adaptativo, mute/deafen e speaking. `room.ready` entrega `callInstanceId`, `connectionId`, `connectionEpoch` e informa se o transporte retomou uma conexão lógica. Eventos do servidor anunciam participantes, restauração do transporte e publicações por `publicationId`. Payloads são validados por Zod, têm limite de 4 KiB e orçamento de 50 mensagens por 10 segundos. Clientes não enviam `userId`, role ou Realtime track ID. O Realtime session ID opaco volta nas operações de mídia, mas o servidor o aceita somente quando está vinculado à mesma sessão autenticada, conexão e sala.
+O protocolo versionado (`v: 4`) usa um WebSocket para presença e controle de call. `server.ready` entrega identidade da conexão e snapshot efêmero. Depois dele, eventos pequenos anunciam apenas deltas. Payloads são validados por Zod, limitados a 4 KiB e sujeitos a orçamento de 50 mensagens por 10 segundos.
+
+O protocolo não usa heartbeat da aplicação, polling ou reenvio periódico de estado. A Hibernation API acompanha o lifecycle do transporte. `state.resync` permite solicitar um snapshot pelo mesmo socket quando o cliente precisa reconciliar presença, participantes e publicações.
+
+## Presença e call são independentes
+
+Abrir o app cria presença online. Entrar em `Geral` exige `call.join`; sair usa `call.leave` e mantém o socket aberto. A lista completa de membros vem do bootstrap e os deltas `presence.changed` alteram somente o conjunto online local.
+
+Múltiplas conexões autenticadas da mesma conta são permitidas. A UI mostra um único membro online enquanto existir ao menos uma conexão. O `activeCallByUser` permite uma call por conta. Outra conexão recebe `call.conflict`; `call.takeover` transfere o lease, emite `call.replaced` para a anterior e responde com o snapshot da call para a nova.
 
 ## Uma sessão de mídia por participante
 
-O navegador solicita TURN, cria uma sessão SFU e mantém uma única `RTCPeerConnection`. Uma fila serializa todas as alterações de SDP:
+A sessão SFU só é criada depois do aceite de `call.join`. A mesma operação HTTP cria a sessão Realtime e obtém credenciais TURN de curta duração em paralelo. O navegador mantém uma única `RTCPeerConnection` e uma fila serializa alterações de SDP:
 
 ```text
-microfone → câmera → tela → assinatura remota → unpublish
+microfone → câmera → tela → subscriptions remotas → unpublish
                          negotiation queue
 ```
 
-O microfone, a câmera, o vídeo da tela e o áudio opcional da tela usam transceivers separados na mesma conexão. Câmera usa três codificações simulcast (`a`, `b`, `c`) com limites conservadores e ordem de fallback compatível com o SFU. A tela usa uma camada para preservar texto e detalhes; a arquitetura permite adicionar políticas específicas depois de testes reais.
+Microfone, câmera, vídeo da tela e áudio opcional da tela usam transceivers separados. Publicação e subscription aceitam várias tracks na mesma oferta. A câmera usa três codificações simulcast conservadoras; a tela usa uma camada para preservar texto e detalhes.
+
+Ao entrar, `call.joined` inclui participantes e publicações existentes. A UI pode sinalizar uma tela como live antes de sua track remota terminar de conectar. Subscriptions são ordenadas por microfone, áudio da tela, vídeo da tela e câmera e enviadas em batch.
 
 ## Autorização server-side
 
-O Durable Object permite uma publicação de cada fonte por usuário: `microphone`, `camera`, `screen-video` e `screen-audio`. Áudio de tela exige uma publicação de tela ativa. O fluxo de publicação reserva o slot, chama o Cloudflare e conclui ou cancela a reserva.
+O `ServerRealtime` permite uma publicação de cada fonte por participante: `microphone`, `camera`, `screen-video` e `screen-audio`. Áudio de tela exige vídeo de tela ativo. Reservas atômicas são concluídas apenas depois da resposta válida do SFU.
 
-Para assinar, o frontend envia apenas `publicationId` como identificador da mídia remota. O Worker valida autenticação, CSRF, sala, conexão, sessão e rate limit. O `VoiceRoom` reserva a assinatura atomicamente e resolve a sessão e track internas somente se a publicação pertence a outro participante conectado na mesma sala. O Worker devolve apenas SDP, `mid` local e metadados públicos.
+O frontend envia `publicationId` opaco para assinar ou fechar mídia. O Worker valida sessão, CSRF, call lease, ownership e rate limit; o Durable Object resolve os IDs internos. Publicações próprias, de outro canal, inexistentes ou pertencentes a outra conexão são recusadas.
 
-O `VoiceRoom` revalida a sessão vinculada ao WebSocket a cada minuto. Uma queda transitória suspende a conexão por 45 segundos, preservando presença, registro de publicações e sessão de mídia. A retomada exige a mesma sessão autenticada, `callInstanceId`, `connectionId` e um epoch superior; esses identificadores coordenam a retomada e não substituem autenticação. Encerramento explícito, substituição sem retomada, revogação ou expiração do grace period removem presença e fecham as tracks conhecidas no Realtime em best effort.
+Operações que alteram SDP usam HTTP por correção do estado WebRTC e pelo tamanho potencial da oferta/resposta. Elas não enviam também um comando WS para representar a mesma intenção. O `ServerRealtime` produz o único delta canônico `media.published` ou `media.unpublished` aos demais clientes.
 
 ## Captura e controles
 
-Câmera e tela começam desligadas. `getUserMedia()` é chamado após ação explícita para câmera ou prévia. `getDisplayMedia()` é chamado diretamente pelo clique de compartilhar e sempre respeita o seletor do navegador. A ausência de áudio de tela é válida. O evento `ended` do vídeo da tela encerra suas publicações.
+Câmera e tela começam desligadas. `getUserMedia()` e `getDisplayMedia()` são chamados somente após ação explícita. A ausência de áudio de tela é válida. O evento `ended` do vídeo encerra todo o grupo lógico de tela.
 
-Troca de microfone ou câmera usa `RTCRtpSender.replaceTrack()` quando a fonte já está publicada. A troca de câmera adquire e valida a nova track antes de substituir a antiga; falha de `deviceId` exato pode usar `facingMode` ideal como fallback. O microfone não é recapturado nessa operação. `devicechange` atualiza os seletores; a remoção da webcam encerra somente a câmera e preserva a voz.
+Troca de microfone ou câmera usa `RTCRtpSender.replaceTrack()` quando a fonte já está publicada. A câmera nova é adquirida e validada antes da substituição; a falha preserva câmera antiga e microfone. `devicechange` atualiza os seletores, e a remoção da webcam encerra apenas a câmera.
 
-O encerramento de tela usa um motivo explícito (`user_stop`, `track_ended`, falha ou lifecycle). A UI local remove a tela antes da resposta da rede, e o Durable Object transmite `media.unpublished` antes do fechamento best-effort no SFU. Vídeo e áudio da tela formam um único grupo lógico. Se o plano de controle estiver indisponível, o fechamento fica pendente para o reconciler; a captura nunca é solicitada novamente sem ação do usuário.
+Ao desligar câmera ou tela, a intenção e a UI local mudam antes da operação remota. Tela fecha vídeo e áudio em um batch. O Durable Object publica `media.unpublished` antes do cleanup best-effort no SFU. Se o control plane estiver temporariamente indisponível, o reconciler retenta o fechamento sem recapturar tela ou câmera.
 
-## Falhas, reconexão e diagnóstico
+## Falhas e reconexão
 
-Um `ConnectionSupervisor` combina saúde do WebSocket, PeerConnection, ICE, rede, visibilidade e intenção de mídia em um único loop de recovery. Oscilações `disconnected` recebem uma janela curta; falhas confirmadas reconciliam o control plane e depois a mídia. O backoff exponencial com jitter chega a 30 segundos e continua em frequência reduzida, sem tempestade de sessões. Epochs e gerações ignoram resultados atrasados, e um disconnect solicitado pelo usuário cancela recovery pendente.
+O `ConnectionSupervisor` combina WebSocket, PeerConnection, ICE, rede, visibilidade e intenção local. Quedas confirmadas usam backoff exponencial com jitter de até 30 segundos. Uma conexão estável zera o backoff. Epochs e gerações ignoram resultados antigos e um leave solicitado cancela recovery pendente.
 
-WebSocket aberto e chamada saudável são estados distintos. Uma queda do socket pode manter WebRTC e tracks vivas durante o grace period. Uma falha confirmada de PeerConnection recria a sessão Realtime e republica apenas tracks ainda coerentes com a intenção do usuário: microfone, câmera ativa e tela cuja track continua viva. Tela encerrada não é recapturada.
+Uma queda do socket pode preservar WebRTC e publicações durante o grace period de 45 segundos. O reconnect usa o mesmo endpoint, retoma a conexão lógica e recebe snapshot efêmero; não repete bootstrap. Falha confirmada da PeerConnection recria a sessão SFU e republica somente microfone, câmera ainda desejada e tela cuja track continua viva. A republicação de tela continua em batch.
 
-Heartbeats usam 25 segundos em foreground e 75 segundos em background, com tolerâncias de liveness de 70 e 210 segundos. Esses timers são dicas operacionais; o servidor não considera atraso pontual como prova de abandono. `visibilitychange`, `pageshow`, `resume` e `online` solicitam reconciliação imediata ao retorno. O aplicativo não encerra mídia por `blur`, `visibilitychange` ou `unload`.
+Nenhum timer encerra mídia por `blur`, `visibilitychange` ou `unload`. Ao voltar de suspensão, eventos de rede e lifecycle solicitam reconciliação, mas não disparam polling.
 
-Em desenvolvimento, `MediaStatsCollector` lê `RTCPeerConnection.getStats()` localmente a cada dois segundos e exibe RTT, jitter, perdas, tráfego, FPS, codecs, bitrate estimado e caminho direto/relay. Os dados não são enviados, persistidos nem coletados em produção.
+Em desenvolvimento, `MediaStatsCollector` lê `RTCPeerConnection.getStats()` localmente e `window.__k0nnectDevelopmentMetrics` expõe contadores de HTTP, operações Realtime estimadas, mensagens WS e reconnects. Esses dados não são enviados, persistidos nem habilitados em produção.
 
-Localmente, `REALTIME_ENABLED=false` mantém presença disponível e impede mídia. O adapter local não publica mídia e não é ativado em produção silenciosamente.
-
-Consulte [connection-lifecycle.md](connection-lifecycle.md) para as máquinas de estado e [manual-realtime-test.md](manual-realtime-test.md) para validação em navegadores e dispositivos físicos.
+Localmente, `REALTIME_ENABLED=false` mantém o control plane disponível e impede mídia. Consulte [connection-lifecycle.md](connection-lifecycle.md) para as máquinas de estado e [manual-realtime-test.md](manual-realtime-test.md) para validação física.
