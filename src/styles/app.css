@@ -371,6 +371,10 @@
 .mobile-menu-button {
   display: none;
 }
+.members-toggle {
+  position: relative;
+  z-index: 45;
+}
 .voice-room-content {
   min-height: 0;
   flex: 1;
@@ -511,9 +515,6 @@
   font-size: 0.7rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-.member-sidebar-close {
-  display: grid;
 }
 .member-list {
   display: grid;
@@ -1169,10 +1170,6 @@
 .dialog-member-row > div {
   display: flex;
   gap: 0.6rem;
-}
-.dialog-member-row button {
-  color: var(--text-tertiary);
-  font-size: 0.72rem;
 }
 .social-dialog fieldset {
   min-width: 0;

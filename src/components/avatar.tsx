@@ -20,15 +20,16 @@ export function participantState(participant: RoomParticipant): PresenceState {
 
 export function Avatar({
   displayName,
-  state = 'online',
+  state,
   size = 'medium',
-  showStatus = true,
+  showStatus = state !== undefined,
 }: {
   displayName: string;
   state?: PresenceState;
   size?: 'small' | 'medium' | 'large';
   showStatus?: boolean;
 }) {
+  const resolvedState = state ?? 'offline';
   const stateLabel: Record<PresenceState, string> = {
     online: 'Online',
     offline: 'Offline',
@@ -38,11 +39,11 @@ export function Avatar({
   };
 
   return (
-    <span className={`avatar avatar-${size} avatar-${state}`} aria-hidden="true">
+    <span className={`avatar avatar-${size} avatar-${resolvedState}`} aria-hidden="true">
       <span className="avatar-content">
         <span className="avatar-initials">{getInitials(displayName)}</span>
       </span>
-      {showStatus && <span className="status-indicator" title={stateLabel[state]} />}
+      {showStatus && <span className="status-indicator" title={stateLabel[resolvedState]} />}
     </span>
   );
 }

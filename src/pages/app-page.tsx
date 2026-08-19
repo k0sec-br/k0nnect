@@ -58,6 +58,7 @@ export function AppPage() {
   if (!user) return null;
 
   const homeActive = navigationContext === 'home';
+  const friendsHomeActive = homeActive && homeContent === 'friends' && !directRecipient;
   const selectedMembers = directRecipient
     ? members.filter((member) => member.id === user.id || member.id === directRecipient.id)
     : homeActive && homeContent === 'friends'
@@ -209,7 +210,7 @@ export function AppPage() {
       voice={shellVoice}
       showCallPanel={showCallPanel}
       channelsOpen={channelsOpen}
-      membersOpen={membersSidebarOpen}
+      membersOpen={friendsHomeActive ? false : membersSidebarOpen}
       onChannelsOpenChange={setChannelsOpen}
       onMembersOpenChange={setMembersSidebarOpen}
       onHomeSelect={() => {

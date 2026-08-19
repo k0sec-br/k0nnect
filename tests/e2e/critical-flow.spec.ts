@@ -285,7 +285,6 @@ async function installBrowserFakes(page: Page): Promise<void> {
                   onlineUserIds: [
                     '11111111-1111-4111-8111-111111111111',
                     '22222222-2222-4222-8222-222222222222',
-                    '33333333-3333-4333-8333-333333333333',
                   ],
                   participants: [
                     ...(resumed
@@ -579,13 +578,20 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await page.getByRole('button', { name: 'Já guardei em segurança' }).click();
 
   await expect(page.getByRole('heading', { name: 'Amigos', level: 1 })).toBeVisible();
+  const memberSidebar = page.getByRole('complementary', { name: 'Membros' });
+  await expect(memberSidebar).not.toBeVisible();
+  const carolFriendRow = page.locator('.social-row').filter({ hasText: '@carol' });
+  await expect(carolFriendRow.getByText('Offline', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: '@carol' }).locator('.avatar-offline'),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'K0Sec' }).click();
   await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
   await expect(page.getByText('Alice (você)').first()).toBeVisible();
   const appMain = page.locator('.app-main');
-  const memberSidebar = page.getByRole('complementary', { name: 'Membros' });
   const initialContentWidth = (await appMain.boundingBox())?.width ?? 0;
   await expect(page.getByRole('button', { name: 'Ocultar membros' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ocultar membros' })).toHaveCount(1);
   await page.getByRole('button', { name: 'Ocultar membros' }).first().click();
   await expect(memberSidebar).not.toBeVisible();
   expect((await appMain.boundingBox())?.width ?? 0).toBeGreaterThan(initialContentWidth + 200);
@@ -593,16 +599,16 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(memberSidebar).toBeVisible();
 
   await page.setViewportSize({ width: 1024, height: 768 });
-  await memberSidebar.getByRole('button', { name: 'Ocultar membros' }).click();
+  await page.getByRole('button', { name: 'Ocultar membros' }).click();
   await expect(memberSidebar).not.toBeVisible();
   await page.getByRole('button', { name: 'Exibir membros' }).click();
   await expect(memberSidebar).toBeVisible();
-  await memberSidebar.getByRole('button', { name: 'Ocultar membros' }).click();
+  await page.getByRole('button', { name: 'Ocultar membros' }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Exibir membros' }).click();
   await expect(memberSidebar).toBeVisible();
-  await memberSidebar.getByRole('button', { name: 'Ocultar membros' }).click();
+  await page.getByRole('button', { name: 'Ocultar membros' }).click();
   await expect(memberSidebar).not.toBeVisible();
 
   for (const width of [1366, 1440, 1920, 2560]) {

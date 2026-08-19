@@ -100,7 +100,7 @@ export function SocialHome({
 
       {foundUser && (
         <div className="social-user-result">
-          <Avatar displayName={foundUser.displayName} />
+          <Avatar displayName={foundUser.displayName} showStatus={false} />
           <span>
             <strong>{foundUser.displayName}</strong>
             <small>@{foundUser.username}</small>
@@ -130,7 +130,7 @@ export function SocialHome({
           <h2>Solicitações recebidas</h2>
           {incoming.map((request) => (
             <div className="social-row" key={request.id}>
-              <Avatar displayName={request.displayName} />
+              <Avatar displayName={request.displayName} showStatus={false} />
               <span>
                 <strong>{request.displayName}</strong>
                 <small>@{request.username}</small>
@@ -225,7 +225,7 @@ export function SocialHome({
           <h2>Solicitações enviadas</h2>
           {outgoing.map((request) => (
             <div className="social-row" key={request.id}>
-              <Avatar displayName={request.displayName} />
+              <Avatar displayName={request.displayName} showStatus={false} />
               <span>
                 <strong>{request.displayName}</strong>
                 <small>@{request.username}</small>

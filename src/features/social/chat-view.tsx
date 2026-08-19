@@ -369,7 +369,7 @@ export function ChatView(props: ChatViewProps) {
         {loading ? <span className="spinner" aria-label="Carregando mensagens" /> : null}
         {!loading && messages.length === 0 && (
           <div className="chat-empty">
-            <Avatar displayName={title} />
+            <Avatar displayName={title} showStatus={false} />
             <h2>{title}</h2>
             <p>Este é o início desta conversa.</p>
           </div>
@@ -387,7 +387,7 @@ export function ChatView(props: ChatViewProps) {
               className={`chat-message ${message.deliveryState === 'sending' ? 'is-pending' : ''} ${message.deliveryState === 'failed' ? 'is-failed' : ''}`}
               key={`${message.clientMessageId}-${message.id}`}
             >
-              <Avatar displayName={author.slice(1)} size="small" />
+              <Avatar displayName={author.slice(1)} size="small" showStatus={false} />
               <div>
                 <header>
                   <strong>{author}</strong>

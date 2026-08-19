@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RoomParticipant } from '../../shared/protocol/room';
 import type { MediaStreamView } from '../features/voice/use-voice-session';
 import { mediaTrackAspectRatio, shouldMirrorLocalCamera } from '../features/voice/video-layout';
-import { Avatar } from './avatar';
+import { Avatar, participantState } from './avatar';
 import { FullscreenButton } from './fullscreen-button';
 import { MediaVideo } from './media-video';
 import { ScreenShareViewport } from './screen-share-viewport';
@@ -196,7 +196,11 @@ export function MediaRoomView({
         )
         .map((participant) => (
           <article className="media-tile media-placeholder" key={participant.userId}>
-            <Avatar displayName={participant.displayName} size="large" />
+            <Avatar
+              displayName={participant.displayName}
+              state={participantState(participant)}
+              size="large"
+            />
             <span className="media-tile-label">
               {participant.displayName}
               {participant.userId === userId ? ' (você)' : ''}

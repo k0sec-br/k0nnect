@@ -137,7 +137,7 @@ export function SettingsLayout({
         </nav>
         <div className="settings-sidebar-footer">
           <div className="settings-user">
-            <Avatar displayName={user.displayName} size="small" />
+            <Avatar displayName={user.displayName} state="online" size="small" />
             <span>
               <strong>{user.displayName}</strong>
               <small>@{user.username}</small>

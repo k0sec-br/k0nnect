@@ -169,7 +169,7 @@ function UserPanel({
   return (
     <div className="user-panel">
       <div className="user-identity">
-        <Avatar displayName={user.displayName} size="small" />
+        <Avatar displayName={user.displayName} state="online" size="small" />
         <span>
           <strong>{user.displayName}</strong>
           <small>@{user.username}</small>
@@ -317,22 +317,25 @@ function ChannelSidebar({
             </div>
             {conversations
               .filter((item) => item.kind === 'dm')
-              .map((conversation) => (
-                <button
-                  className={`voice-channel ${selectedConversation?.id === conversation.id ? 'is-active' : ''}`}
-                  type="button"
-                  key={conversation.id}
-                  aria-current={selectedConversation?.id === conversation.id ? 'page' : undefined}
-                  onClick={() => onHomeConversationSelect(conversation.id)}
-                >
-                  <Avatar displayName={conversation.name} size="small" />
-                  <span>
-                    @
-                    {conversation.members.find((member) => member.id !== user.id)?.username ??
-                      conversation.name}
-                  </span>
-                </button>
-              ))}
+              .map((conversation) => {
+                const peer = conversation.members.find((member) => member.id !== user.id);
+                return (
+                  <button
+                    className={`voice-channel ${selectedConversation?.id === conversation.id ? 'is-active' : ''}`}
+                    type="button"
+                    key={conversation.id}
+                    aria-current={selectedConversation?.id === conversation.id ? 'page' : undefined}
+                    onClick={() => onHomeConversationSelect(conversation.id)}
+                  >
+                    <Avatar
+                      displayName={peer?.displayName ?? conversation.name}
+                      state={peer && onlineUserIds.includes(peer.id) ? 'online' : 'offline'}
+                      size="small"
+                    />
+                    <span>@{peer?.username ?? conversation.name}</span>
+                  </button>
+                );
+              })}
           </>
         ) : selectedConversation?.spaceKind === 'community' ? (
           <>
@@ -418,13 +421,11 @@ function MemberSidebar({
   onlineUserIds,
   userId,
   open,
-  onClose,
 }: {
   members: MemberView[];
   onlineUserIds: string[];
   userId: string;
   open: boolean;
-  onClose(): void;
 }) {
   const onlineIds = new Set(onlineUserIds);
   const onlineMembers = members.filter((member) => onlineIds.has(member.id));
@@ -449,9 +450,6 @@ function MemberSidebar({
     <aside className={`member-sidebar ${open ? 'is-open' : ''}`} aria-label="Membros">
       <header className="member-sidebar-header">
         <span>Online — {onlineMembers.length}</span>
-        <IconButton label="Ocultar membros" className="member-sidebar-close" onClick={onClose}>
-          <PanelRightCloseIcon aria-hidden="true" />
-        </IconButton>
       </header>
       <div className="member-list">
         {onlineMembers.map((member) => renderMember(member, true))}
@@ -541,7 +539,6 @@ export function AppShell(props: AppShellProps) {
         onlineUserIds={props.onlineUserIds}
         userId={props.user.id}
         open={props.membersOpen}
-        onClose={() => props.onMembersOpenChange(false)}
       />
       {(props.channelsOpen || props.membersOpen) && (
         <button
