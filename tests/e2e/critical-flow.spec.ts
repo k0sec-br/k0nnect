@@ -484,11 +484,34 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await page.getByRole('button', { name: 'K0Sec' }).click();
   await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
   await expect(page.getByText('Alice (você)').first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Mostrar membros' })).toBeVisible();
+  const appMain = page.locator('.app-main');
+  const memberSidebar = page.getByRole('complementary', { name: 'Membros' });
+  const initialContentWidth = (await appMain.boundingBox())?.width ?? 0;
+  await expect(page.getByRole('button', { name: 'Ocultar membros' }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Ocultar membros' }).first().click();
+  await expect(memberSidebar).not.toBeVisible();
+  expect((await appMain.boundingBox())?.width ?? 0).toBeGreaterThan(initialContentWidth + 200);
+  await page.getByRole('button', { name: 'Exibir membros' }).click();
+  await expect(memberSidebar).toBeVisible();
+
   await page.setViewportSize({ width: 1024, height: 768 });
-  await expect(page.getByRole('button', { name: 'Mostrar membros' })).toBeVisible();
+  await memberSidebar.getByRole('button', { name: 'Ocultar membros' }).click();
+  await expect(memberSidebar).not.toBeVisible();
+  await page.getByRole('button', { name: 'Exibir membros' }).click();
+  await expect(memberSidebar).toBeVisible();
+  await memberSidebar.getByRole('button', { name: 'Ocultar membros' }).click();
+
+  for (const width of [1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    const expandedContentWidth = (await appMain.boundingBox())?.width ?? 0;
+    await page.getByRole('button', { name: 'Exibir membros' }).click();
+    await expect(memberSidebar).toBeVisible();
+    expect((await appMain.boundingBox())?.width ?? 0).toBeLessThan(expandedContentWidth - 200);
+    await page.getByRole('button', { name: 'Ocultar membros' }).first().click();
+    await expect(memberSidebar).not.toBeVisible();
+  }
+
   await page.setViewportSize({ width: 1280, height: 720 });
-  await expect(page.getByRole('button', { name: 'Mostrar membros' })).toBeVisible();
   await expect.poll(() => pageErrors).toEqual([]);
   await page.getByRole('button', { name: 'Geral' }).click();
   await expect(page.getByRole('button', { name: 'Desativar microfone' })).toBeVisible();

@@ -23,7 +23,9 @@ export function AppPage() {
   const call = useCall();
   const { config, connectionState, members, room, socket, voice } = call;
   const [channelsOpen, setChannelsOpen] = useState(false);
-  const [membersOpen, setMembersOpen] = useState(false);
+  const [membersSidebarOpen, setMembersSidebarOpen] = useState(
+    () => window.matchMedia('(min-width: 1200px)').matches,
+  );
   const [navigationContext, setNavigationContext] = useState<NavigationContext>('home');
   const [homeContent, setHomeContent] = useState<HomeContent>('friends');
   const [directRecipient, setDirectRecipient] = useState<SocialUserView | null>(null);
@@ -151,9 +153,9 @@ export function AppPage() {
       voice={shellVoice}
       showCallPanel={showCallPanel}
       channelsOpen={channelsOpen}
-      membersOpen={membersOpen}
+      membersOpen={membersSidebarOpen}
       onChannelsOpenChange={setChannelsOpen}
-      onMembersOpenChange={setMembersOpen}
+      onMembersOpenChange={setMembersSidebarOpen}
       onHomeSelect={() => {
         setNavigationContext('home');
         setHomeContent('friends');
@@ -218,7 +220,8 @@ export function AppPage() {
             canSend={canSendMessage}
             friends={call.friends}
             onOpenChannels={() => setChannelsOpen(true)}
-            onOpenMembers={() => setMembersOpen(true)}
+            membersSidebarOpen={membersSidebarOpen}
+            onToggleMembers={() => setMembersSidebarOpen((open) => !open)}
             onMessagesLoaded={(messages) => {
               if (call.selectedConversation) {
                 socket.setConversationMessages(call.selectedConversation.id, messages);

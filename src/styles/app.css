@@ -1,9 +1,12 @@
 .app-shell {
   display: grid;
   min-height: 100dvh;
-  grid-template-columns: 4.5rem 17rem minmax(22rem, 1fr) 14rem;
+  grid-template-columns: 4.5rem 17rem minmax(22rem, 1fr);
   overflow: hidden;
   background: var(--surface-root);
+}
+.app-shell.has-members-sidebar {
+  grid-template-columns: 4.5rem 17rem minmax(22rem, 1fr) 14rem;
 }
 .group-rail {
   z-index: 20;
@@ -494,7 +497,11 @@
   font-size: 0.78rem;
 }
 .member-sidebar {
+  display: none;
   border-left: 1px solid var(--border-default);
+}
+.member-sidebar.is-open {
+  display: flex;
 }
 .member-sidebar-header {
   justify-content: space-between;
@@ -504,6 +511,9 @@
   font-size: 0.7rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+.member-sidebar-close {
+  display: grid;
 }
 .member-list {
   display: grid;
@@ -1275,6 +1285,9 @@
 }
 @media (max-width: 1199px) {
   .app-shell {
+    grid-template-columns: 4.5rem 17rem minmax(22rem, 1fr);
+  }
+  .app-shell.has-members-sidebar {
     grid-template-columns: 4.5rem 17rem minmax(22rem, 1fr);
   }
   .member-sidebar {

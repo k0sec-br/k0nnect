@@ -21,10 +21,11 @@ import { IconButton } from '../../components/icon-button';
 import {
   MenuIcon,
   MoreIcon,
+  PanelRightCloseIcon,
+  PanelRightOpenIcon,
   PencilIcon,
   PhoneIcon,
   TrashIcon,
-  UsersIcon,
 } from '../../components/icons';
 import { apiClient } from '../../lib/api-client';
 import { chatAuthorUsername } from './chat-author';
@@ -44,7 +45,8 @@ interface ChatViewProps {
   canSend: boolean;
   friends: FriendView[];
   onOpenChannels(): void;
-  onOpenMembers(): void;
+  membersSidebarOpen: boolean;
+  onToggleMembers(): void;
   onMessagesLoaded(messages: ChatMessageView[]): void;
   onSend(
     target: { conversationId: string } | { recipientUserId: string },
@@ -315,10 +317,15 @@ export function ChatView(props: ChatViewProps) {
         <button
           className="icon-button members-toggle"
           type="button"
-          aria-label="Mostrar membros"
-          onClick={props.onOpenMembers}
+          aria-label={props.membersSidebarOpen ? 'Ocultar membros' : 'Exibir membros'}
+          aria-expanded={props.membersSidebarOpen}
+          onClick={props.onToggleMembers}
         >
-          <UsersIcon aria-hidden="true" />
+          {props.membersSidebarOpen ? (
+            <PanelRightCloseIcon aria-hidden="true" />
+          ) : (
+            <PanelRightOpenIcon aria-hidden="true" />
+          )}
         </button>
       </header>
       {privateCallAvailable &&

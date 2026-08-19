@@ -17,6 +17,8 @@ import {
   HeadphonesOffIcon,
   MicIcon,
   MicOffIcon,
+  PanelRightCloseIcon,
+  PanelRightOpenIcon,
   PlusIcon,
   ScreenShareIcon,
   ScreenShareOffIcon,
@@ -402,74 +404,41 @@ function ChannelSidebar({
 function MemberSidebar({
   members,
   onlineUserIds,
-  participants,
-  publications,
   userId,
-  callPresenceLabel,
   open,
   onClose,
 }: {
   members: MemberView[];
   onlineUserIds: string[];
-  participants: RoomParticipant[];
-  publications: MediaPublication[];
   userId: string;
-  callPresenceLabel: string;
   open: boolean;
   onClose(): void;
 }) {
-  const participantByUser = new Map(
-    participants.map((participant) => [participant.userId, participant]),
-  );
   const onlineIds = new Set(onlineUserIds);
   const onlineMembers = members.filter((member) => onlineIds.has(member.id));
   const offlineMembers = members.filter((member) => !onlineIds.has(member.id));
 
   const renderMember = (member: MemberView, online: boolean) => {
-    const participant = participantByUser.get(member.id);
-    const state = participant ? participantState(participant) : online ? 'online' : 'offline';
-    const isSharingScreen = publications.some(
-      (publication) => publication.userId === member.id && publication.source === 'screen-video',
-    );
-    const cameraActive = publications.some(
-      (publication) => publication.userId === member.id && publication.source === 'camera',
-    );
     return (
-      <div className={`member-item ${participant?.speaking ? 'is-speaking' : ''}`} key={member.id}>
-        <Avatar displayName={member.displayName} state={state} />
+      <div className="member-item" key={member.id}>
+        <Avatar displayName={member.displayName} state={online ? 'online' : 'offline'} />
         <span>
           <strong>
             {member.displayName}
             {member.id === userId ? ' (você)' : ''}
           </strong>
-          <small>
-            {isSharingScreen
-              ? 'Compartilhando tela'
-              : cameraActive
-                ? 'Câmera ligada'
-                : participant
-                  ? state === 'speaking'
-                    ? 'Falando'
-                    : state === 'muted'
-                      ? 'Microfone desativado'
-                      : state === 'deafened'
-                        ? 'Áudio desativado'
-                        : callPresenceLabel
-                  : online
-                    ? 'Online'
-                    : 'Offline'}
-          </small>
+          <small>{online ? 'Online' : 'Offline'}</small>
         </span>
       </div>
     );
   };
 
   return (
-    <aside className={`member-sidebar ${open ? 'is-open' : ''}`} aria-label="Participantes">
+    <aside className={`member-sidebar ${open ? 'is-open' : ''}`} aria-label="Membros">
       <header className="member-sidebar-header">
         <span>Online — {onlineMembers.length}</span>
-        <IconButton label="Fechar participantes" className="drawer-close" onClick={onClose}>
-          <CloseIcon aria-hidden="true" />
+        <IconButton label="Ocultar membros" className="member-sidebar-close" onClick={onClose}>
+          <PanelRightCloseIcon aria-hidden="true" />
         </IconButton>
       </header>
       <div className="member-list">
@@ -488,7 +457,7 @@ function MemberSidebar({
 export function AppShell(props: AppShellProps) {
   const mobileLayout = useMediaQuery('(max-width: 767px)');
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${props.membersOpen ? 'has-members-sidebar' : ''}`}>
       <aside className="group-rail" aria-label="Grupos">
         <button
           className={`rail-item rail-home ${props.navigationContext === 'home' ? 'is-active' : ''}`}
@@ -556,15 +525,7 @@ export function AppShell(props: AppShellProps) {
       <MemberSidebar
         members={props.members}
         onlineUserIds={props.onlineUserIds}
-        participants={props.participants}
-        publications={props.publications}
         userId={props.user.id}
-        callPresenceLabel={
-          props.navigationContext === 'group' &&
-          props.selectedConversation?.spaceKind === 'community'
-            ? 'Em Geral'
-            : 'Em chamada'
-        }
         open={props.membersOpen}
         onClose={() => props.onMembersOpenChange(false)}
       />
@@ -659,11 +620,15 @@ export function AppShell(props: AppShellProps) {
             <CloseIcon aria-hidden="true" />
           </IconButton>
           <IconButton
-            label={props.membersOpen ? 'Ocultar participantes' : 'Mostrar participantes'}
+            label={props.membersOpen ? 'Ocultar membros' : 'Exibir membros'}
             aria-expanded={props.membersOpen}
             onClick={() => props.onMembersOpenChange(!props.membersOpen)}
           >
-            <UsersIcon aria-hidden="true" />
+            {props.membersOpen ? (
+              <PanelRightCloseIcon aria-hidden="true" />
+            ) : (
+              <PanelRightOpenIcon aria-hidden="true" />
+            )}
           </IconButton>
         </div>
       )}
