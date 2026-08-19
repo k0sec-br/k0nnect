@@ -34,18 +34,24 @@ function nextClose(socket: WebSocket): Promise<CloseEvent> {
   return new Promise((resolve) => socket.addEventListener('close', resolve, { once: true }));
 }
 
-async function connect(cookie: string) {
-  const response = await exports.default.fetch(
-    'http://localhost:5173/api/rooms/room_general/socket',
-    {
-      headers: {
-        Origin: 'http://localhost:5173',
-        Cookie: cookie,
-        Upgrade: 'websocket',
-        'CF-Connecting-IP': `192.0.2.${crypto.getRandomValues(new Uint8Array(1))[0] ?? 1}`,
-      },
+async function connect(
+  cookie: string,
+  resume?: { callInstanceId: string; connectionEpoch: number; connectionId: string },
+) {
+  const url = new URL('http://localhost:5173/api/rooms/room_general/socket');
+  if (resume) {
+    url.searchParams.set('callInstanceId', resume.callInstanceId);
+    url.searchParams.set('connectionId', resume.connectionId);
+    url.searchParams.set('connectionEpoch', String(resume.connectionEpoch));
+  }
+  const response = await exports.default.fetch(url, {
+    headers: {
+      Origin: 'http://localhost:5173',
+      Cookie: cookie,
+      Upgrade: 'websocket',
+      'CF-Connecting-IP': `192.0.2.${crypto.getRandomValues(new Uint8Array(1))[0] ?? 1}`,
     },
-  );
+  });
   expect(response.status).toBe(101);
   expect(response.webSocket).not.toBeNull();
   const socket = response.webSocket;
@@ -181,6 +187,81 @@ describe('sala em tempo real', () => {
     const alarmRan = await runDurableObjectAlarm(env.VOICE_ROOMS.getByName('room_general'));
     expect(alarmRan).toBe(true);
     expect((await closed).code).toBe(4003);
+  });
+
+  it('retoma a identidade lógica e a mídia dentro do grace period sem anunciar saída', async () => {
+    const aliceCookie = await createAccount('alice', 'Alice');
+    const bobCookie = await createAccount('bob', 'Bob');
+    const alice = await connect(aliceCookie);
+    const aliceJoined = nextMessage(alice.socket);
+    const bob = await connect(bobCookie);
+    await aliceJoined;
+    if (alice.ready.type !== 'room.ready' || bob.ready.type !== 'room.ready') {
+      throw new Error('Mensagem room.ready esperada');
+    }
+    const aliceUserId = alice.ready.payload.participants.find(
+      (participant) => participant.displayName === 'Alice',
+    )?.userId;
+    if (!aliceUserId) throw new Error('Participante Alice ausente');
+
+    const room = env.VOICE_ROOMS.getByName('room_general');
+    expect(
+      await room.registerRealtimeSession(
+        aliceUserId,
+        alice.ready.payload.connectionId,
+        'alice_session',
+      ),
+    ).toBe(true);
+    const publicationId = await room.reservePublication(
+      aliceUserId,
+      alice.ready.payload.connectionId,
+      'alice_session',
+      'camera',
+      '1',
+    );
+    if (!publicationId) throw new Error('Reserva de publicação esperada');
+    const publishedForBob = nextMessage(bob.socket);
+    await room.completePublication(
+      aliceUserId,
+      alice.ready.payload.connectionId,
+      publicationId,
+      'alice_camera_track',
+    );
+    expect((await publishedForBob).type).toBe('media.published');
+
+    const aliceClosed = nextClose(alice.socket);
+    alice.socket.close(1012, 'Falha transitória');
+    await aliceClosed;
+    const restoredForBob = nextMessage(bob.socket);
+    const resumed = await connect(aliceCookie, {
+      callInstanceId: alice.ready.payload.callInstanceId,
+      connectionEpoch: alice.ready.payload.connectionEpoch + 1,
+      connectionId: alice.ready.payload.connectionId,
+    });
+    if (resumed.ready.type !== 'room.ready') throw new Error('Mensagem room.ready esperada');
+    expect(resumed.ready.payload).toMatchObject({
+      callInstanceId: alice.ready.payload.callInstanceId,
+      connectionEpoch: alice.ready.payload.connectionEpoch + 1,
+      connectionId: alice.ready.payload.connectionId,
+      resumed: true,
+    });
+    expect(resumed.ready.payload.publications).toEqual([
+      expect.objectContaining({ publicationId, source: 'camera' }),
+    ]);
+    expect((await restoredForBob).type).toBe('member.updated');
+
+    const forged = await connect(await createAccount('charlie', 'Charlie'), {
+      callInstanceId: alice.ready.payload.callInstanceId,
+      connectionEpoch: alice.ready.payload.connectionEpoch + 2,
+      connectionId: alice.ready.payload.connectionId,
+    });
+    if (forged.ready.type !== 'room.ready') throw new Error('Mensagem room.ready esperada');
+    expect(forged.ready.payload.resumed).toBe(false);
+    expect(forged.ready.payload.connectionId).not.toBe(alice.ready.payload.connectionId);
+
+    resumed.socket.close(1000, 'Fim do teste');
+    bob.socket.close(1000, 'Fim do teste');
+    forged.socket.close(1000, 'Fim do teste');
   });
 
   it('autoriza publicações por ID opaco e aplica limites por fonte e sala', async () => {

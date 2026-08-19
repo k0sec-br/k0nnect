@@ -133,10 +133,14 @@ export class CloudflareRealtimeClient {
   }
 
   async closeTrack(sessionId: string, mid: string) {
+    return this.closeTracks(sessionId, [mid]);
+  }
+
+  async closeTracks(sessionId: string, mids: string[]) {
     const response = await this.request(
       `/sessions/${encodeURIComponent(sessionId)}/tracks/close`,
       'PUT',
-      { tracks: [{ mid }] },
+      { tracks: mids.map((mid) => ({ mid })) },
     );
     return closeTracksResponseSchema.parse(response);
   }

@@ -36,6 +36,17 @@ describe('CloudflareRealtimeClient', () => {
     expect(parsedRequestBody(request?.[1]?.body)).toEqual({ tracks: [{ mid: '2' }] });
   });
 
+  it('fecha áudio e vídeo da tela em uma única operação', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(jsonResponse({ tracks: [{ mid: '2' }, { mid: '3' }] }));
+    await new CloudflareRealtimeClient(TEST_ENV).closeTracks('session_1', ['2', '3']);
+
+    expect(parsedRequestBody(fetchMock.mock.calls[0]?.[1]?.body)).toEqual({
+      tracks: [{ mid: '2' }, { mid: '3' }],
+    });
+  });
+
   it('configura fallback simulcast somente para câmera', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(

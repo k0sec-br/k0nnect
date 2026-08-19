@@ -81,6 +81,56 @@ describe('CameraManager', () => {
     expect(nextTrack.stop).toHaveBeenCalledOnce();
     expect(manager.currentTrack()).toBe(previousTrack);
   });
+
+  it('usa facingMode ideal como fallback sem interromper a câmera anterior', async () => {
+    const previousTrack = fakeTrack('video');
+    const fallbackTrack = fakeTrack('video');
+    const fallbackStream = fakeStream([fallbackTrack]);
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce(fakeStream([previousTrack]))
+      .mockRejectedValueOnce(new DOMException('restrição inválida', 'OverconstrainedError'))
+      .mockResolvedValueOnce(fallbackStream);
+    const manager = new CameraManager({ getUserMedia } as unknown as MediaDevices);
+    await manager.start('camera-front');
+    const applyReplacement = vi.fn(() => Promise.resolve());
+
+    await expect(manager.replace('camera-rear', applyReplacement, 'environment')).resolves.toBe(
+      fallbackStream,
+    );
+    const mediaCalls = getUserMedia.mock.calls as unknown as [MediaStreamConstraints][];
+    expect(mediaCalls.at(-1)?.[0]).toEqual({
+      audio: false,
+      video: expect.objectContaining({ facingMode: { ideal: 'environment' } }) as unknown,
+    });
+    expect(applyReplacement).toHaveBeenCalledWith(fallbackTrack);
+    expect(previousTrack.stop).toHaveBeenCalledOnce();
+  });
+
+  it('cancela uma troca pendente quando o usuário encerra a câmera', async () => {
+    const previousTrack = fakeTrack('video');
+    const nextTrack = fakeTrack('video');
+    let finishCapture: ((stream: MediaStream) => void) | undefined;
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce(fakeStream([previousTrack]))
+      .mockImplementationOnce(
+        () =>
+          new Promise<MediaStream>((resolve) => {
+            finishCapture = resolve;
+          }),
+      );
+    const manager = new CameraManager({ getUserMedia } as unknown as MediaDevices);
+    await manager.start('camera-front');
+    const replacement = manager.replace('camera-rear', () => Promise.resolve());
+    manager.stop();
+    finishCapture?.(fakeStream([nextTrack]));
+
+    await expect(replacement).rejects.toMatchObject({ name: 'AbortError' });
+    expect(previousTrack.stop).toHaveBeenCalledOnce();
+    expect(nextTrack.stop).toHaveBeenCalledOnce();
+    expect(manager.currentTrack()).toBeUndefined();
+  });
 });
 
 describe('ScreenShareManager', () => {

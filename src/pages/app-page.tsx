@@ -13,9 +13,20 @@ import { useCall } from '../features/call/call-context';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { navigate } from '../lib/navigation';
 
+function connectionStatusLabel(state: ReturnType<typeof useCall>['connectionState']): string {
+  if (state === 'connected') return 'Conectado';
+  if (state === 'idle' || state === 'disconnected') return 'Sala conectada';
+  if (state === 'connecting') return 'Conectando…';
+  if (state === 'degraded') return 'Conexão instável';
+  if (state === 'suspended') return 'Aguardando rede…';
+  if (state === 'disconnecting') return 'Desconectando…';
+  if (state === 'failed') return 'Não foi possível restabelecer a chamada';
+  return 'Reconectando…';
+}
+
 export function AppPage() {
   const { logout, user } = useAuth();
-  const { activateRoom, config, loadError, room, socket, voice } = useCall();
+  const { activateRoom, config, connectionState, loadError, room, socket, voice } = useCall();
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const membersAreOptional = useMediaQuery('(max-width: 1199px)');
@@ -69,7 +80,7 @@ export function AppPage() {
       roomName={room.name}
       participants={socket.participants}
       publications={socket.publications}
-      connectionState={socket.connectionState}
+      connectionState={connectionState}
       voice={shellVoice}
       channelsOpen={channelsOpen}
       membersOpen={membersOpen}
@@ -93,13 +104,9 @@ export function AppPage() {
             <VolumeIcon aria-hidden="true" />
             <h1>{room.name}</h1>
           </div>
-          <span className={`connection-status connection-${socket.connectionState}`} role="status">
+          <span className={`connection-status connection-${connectionState}`} role="status">
             <i aria-hidden="true" />
-            {socket.connectionState === 'connected'
-              ? 'Conectado'
-              : socket.connectionState === 'offline'
-                ? 'Sem conexão'
-                : 'Reconectando…'}
+            {connectionStatusLabel(connectionState)}
           </span>
           {membersAreOptional && (
             <IconButton
@@ -135,7 +142,18 @@ export function AppPage() {
           ) : (
             <AudioOnlyView participants={socket.participants} userId={user.id} />
           )}
-          {import.meta.env.DEV && voice.debugStats && <MediaDebugPanel stats={voice.debugStats} />}
+          {import.meta.env.DEV && (
+            <MediaDebugPanel
+              callState={connectionState}
+              connectionEpoch={socket.connectionIdentity()?.connectionEpoch ?? null}
+              health={voice.debugHealth}
+              lastRecoveryReason={voice.lastRecoveryReason}
+              networkOnline={navigator.onLine}
+              recoveryAttempts={voice.recoveryAttempts}
+              socketState={socket.connectionState}
+              stats={voice.debugStats}
+            />
+          )}
         </div>
 
         {voice.status === 'idle' && (

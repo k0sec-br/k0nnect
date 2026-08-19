@@ -1,4 +1,4 @@
-import type { MediaPublication, MediaSource } from '../../../shared/protocol/room';
+import type { MediaEndReason, MediaPublication, MediaSource } from '../../../shared/protocol/room';
 import { apiClient } from '../../lib/api-client';
 import { NegotiationQueue } from './negotiation-queue';
 
@@ -31,6 +31,13 @@ export interface RemoteMediaTrack {
   track: MediaStreamTrack;
 }
 
+export interface MediaConnectionSnapshot {
+  connectionState: RTCPeerConnectionState;
+  iceConnectionState: RTCIceConnectionState;
+  iceGatheringState: RTCIceGatheringState;
+  signalingState: RTCSignalingState;
+}
+
 const VIDEO_ENCODINGS: RTCRtpEncodingParameters[] = [
   { rid: 'a', maxBitrate: 2_500_000, scaleResolutionDownBy: 1 },
   { rid: 'b', maxBitrate: 900_000, scaleResolutionDownBy: 2 },
@@ -50,10 +57,10 @@ export class MediaSessionManager {
     private readonly connectionId: string,
     private readonly onRemoteTrack: (media: RemoteMediaTrack) => void,
     private readonly onRemoteTrackRemoved: (publicationId: string) => void,
-    private readonly onConnectionChange: (state: RTCPeerConnectionState) => void,
+    private readonly onConnectionChange: (snapshot: MediaConnectionSnapshot) => void,
   ) {}
 
-  async start(deviceId?: string): Promise<MediaStreamTrack> {
+  async start(deviceId?: string, existingMicrophone?: MediaStreamTrack): Promise<MediaStreamTrack> {
     const turn = await apiClient.post<{ iceServers: RTCIceServer[] }>('/api/realtime/session', {
       action: 'turn',
       roomId: this.roomId,
@@ -81,20 +88,24 @@ export class MediaSessionManager {
         { once: true },
       );
     });
-    peerConnection.addEventListener('connectionstatechange', () => {
-      this.onConnectionChange(peerConnection.connectionState);
-    });
+    const emitConnectionSnapshot = () => this.onConnectionChange(this.connectionSnapshot());
+    peerConnection.addEventListener('connectionstatechange', emitConnectionSnapshot);
+    peerConnection.addEventListener('iceconnectionstatechange', emitConnectionSnapshot);
+    peerConnection.addEventListener('icegatheringstatechange', emitConnectionSnapshot);
+    peerConnection.addEventListener('signalingstatechange', emitConnectionSnapshot);
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: false,
-    });
-    const track = stream.getAudioTracks()[0];
+    const stream = existingMicrophone
+      ? new MediaStream([existingMicrophone])
+      : await navigator.mediaDevices.getUserMedia({
+          audio: {
+            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+          video: false,
+        });
+    const track = existingMicrophone ?? stream.getAudioTracks()[0];
     if (!track) throw new DOMException('Microfone indisponível', 'NotFoundError');
 
     const session = await apiClient.post<{ sessionId: string }>('/api/realtime/session', {
@@ -104,7 +115,7 @@ export class MediaSessionManager {
     });
     this.sessionId = session.sessionId;
     try {
-      await this.publishTrack(track, stream, 'microphone');
+      await this.publishTrack(track, stream, 'microphone', !existingMicrophone);
     } catch (error) {
       track.stop();
       throw error;
@@ -116,6 +127,7 @@ export class MediaSessionManager {
     track: MediaStreamTrack,
     stream: MediaStream,
     source: MediaSource,
+    stopTrackOnFailure = true,
   ): Promise<MediaPublication> {
     return this.negotiationQueue.enqueue(async () => {
       const peerConnection = this.requirePeerConnection();
@@ -155,7 +167,7 @@ export class MediaSessionManager {
         return response.publication;
       } catch (error) {
         transceiver.sender.replaceTrack(null).catch(() => undefined);
-        track.stop();
+        if (stopTrackOnFailure) track.stop();
         throw error;
       }
     });
@@ -253,10 +265,12 @@ export class MediaSessionManager {
     return replacement;
   }
 
-  closePublication(source: MediaSource): Promise<void> {
+  closePublication(source: MediaSource, reason: MediaEndReason): Promise<void> {
     return this.negotiationQueue.enqueue(async () => {
       const publication = this.localPublications.get(source);
       if (!publication) return;
+      const sources: MediaSource[] =
+        source === 'screen-video' ? ['screen-video', 'screen-audio'] : [source];
       try {
         const response = await apiClient.post<CloseResponse>('/api/realtime/session', {
           action: 'close',
@@ -264,12 +278,17 @@ export class MediaSessionManager {
           connectionId: this.connectionId,
           sessionId: this.requireSessionId(),
           publicationId: publication.publication.publicationId,
+          reason,
         });
         await this.applyServerOffer(response.sessionDescription);
       } finally {
-        await publication.sender.replaceTrack(null).catch(() => undefined);
-        publication.track.stop();
-        this.localPublications.delete(source);
+        for (const sourceToClose of sources) {
+          const localPublication = this.localPublications.get(sourceToClose);
+          if (!localPublication) continue;
+          await localPublication.sender.replaceTrack(null).catch(() => undefined);
+          localPublication.track.stop();
+          this.localPublications.delete(sourceToClose);
+        }
       }
     });
   }
@@ -277,7 +296,7 @@ export class MediaSessionManager {
   async stop(): Promise<void> {
     const sources = [...this.localPublications.keys()];
     for (const source of sources) {
-      await this.closePublication(source).catch(() => undefined);
+      await this.closePublication(source, 'publisher_left').catch(() => undefined);
     }
     for (const media of this.remotePublications.values()) media.track.stop();
     this.remotePublications.clear();
@@ -289,6 +308,67 @@ export class MediaSessionManager {
 
   getStats(): Promise<RTCStatsReport> {
     return this.requirePeerConnection().getStats();
+  }
+
+  connectionSnapshot(): MediaConnectionSnapshot {
+    const peerConnection = this.requirePeerConnection();
+    return {
+      connectionState: peerConnection.connectionState ?? 'new',
+      iceConnectionState: peerConnection.iceConnectionState ?? 'new',
+      iceGatheringState: peerConnection.iceGatheringState ?? 'new',
+      signalingState: peerConnection.signalingState ?? 'stable',
+    };
+  }
+
+  localTrack(source: MediaSource): MediaStreamTrack | undefined {
+    return this.localPublications.get(source)?.track;
+  }
+
+  localPublication(source: MediaSource): MediaPublication | undefined {
+    return this.localPublications.get(source)?.publication;
+  }
+
+  async retryClosePublication(publicationId: string, reason: MediaEndReason): Promise<void> {
+    const response = await apiClient.post<CloseResponse>('/api/realtime/session', {
+      action: 'close',
+      roomId: this.roomId,
+      connectionId: this.connectionId,
+      sessionId: this.requireSessionId(),
+      publicationId,
+      reason,
+    });
+    await this.applyServerOffer(response.sessionDescription);
+  }
+
+  localPublicationSources(): MediaSource[] {
+    return [...this.localPublications.keys()];
+  }
+
+  remotePublicationCount(): number {
+    return this.remotePublicationByMid.size;
+  }
+
+  maskedSessionId(): string {
+    if (!this.sessionId) return '—';
+    return this.sessionId.length <= 8
+      ? '••••'
+      : `${this.sessionId.slice(0, 4)}…${this.sessionId.slice(-4)}`;
+  }
+
+  async detachForRecovery(): Promise<void> {
+    for (const publication of this.localPublications.values()) {
+      await publication.sender.replaceTrack(null).catch(() => undefined);
+    }
+    this.localPublications.clear();
+    for (const [publicationId, media] of this.remotePublications) {
+      media.track.stop();
+      this.onRemoteTrackRemoved(publicationId);
+    }
+    this.remotePublications.clear();
+    this.remotePublicationByMid.clear();
+    this.peerConnection?.close();
+    this.peerConnection = null;
+    this.sessionId = null;
   }
 
   private async applyServerOffer(description?: RTCSessionDescriptionInit): Promise<void> {

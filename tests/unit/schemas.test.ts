@@ -31,6 +31,23 @@ describe('validação de entrada', () => {
       realtimeSessionRequestSchema.safeParse({ ...base, preferredRid: 'arbitrary' }).success,
     ).toBe(false);
   });
+
+  it('exige motivo autoritativo ao encerrar uma publicação', () => {
+    const closeRequest = {
+      action: 'close',
+      roomId: 'room_general',
+      connectionId: crypto.randomUUID(),
+      sessionId: 'session_1',
+      publicationId: crypto.randomUUID(),
+    };
+    expect(realtimeSessionRequestSchema.safeParse(closeRequest).success).toBe(false);
+    expect(
+      realtimeSessionRequestSchema.safeParse({ ...closeRequest, reason: 'user_stop' }).success,
+    ).toBe(true);
+    expect(
+      realtimeSessionRequestSchema.safeParse({ ...closeRequest, reason: 'network_error' }).success,
+    ).toBe(false);
+  });
   it('normaliza usernames e recusa nomes reservados ou caracteres inesperados', () => {
     expect(usernameSchema.parse('  Alice.Dev ')).toBe('alice.dev');
     expect(usernameSchema.safeParse('root').success).toBe(false);

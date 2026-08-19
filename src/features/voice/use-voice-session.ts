@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { MediaPublication } from '../../../shared/protocol/room';
+import type { MediaEndReason, MediaPublication } from '../../../shared/protocol/room';
 import { mediaDevicePreferences } from './media-device-preferences';
 import { CameraManager, ScreenShareManager } from './media-capture-managers';
 import { mediaErrorMessage } from './media-errors';
 import { MediaStatsCollector, type MediaStatsSnapshot } from './media-stats';
-import { MediaSessionManager, type RemoteMediaTrack } from './media-session-manager';
+import {
+  MediaSessionManager,
+  type MediaConnectionSnapshot,
+  type RemoteMediaTrack,
+} from './media-session-manager';
 import { startSpeakingDetector } from './speaking-detector';
 import {
   effectiveMuted,
@@ -15,7 +19,14 @@ import {
 } from './voice-control-state';
 
 export type TrackLifecycleState =
-  'idle' | 'requesting-permission' | 'starting' | 'publishing' | 'active' | 'stopping' | 'error';
+  | 'idle'
+  | 'requesting-permission'
+  | 'starting'
+  | 'publishing'
+  | 'active'
+  | 'switching'
+  | 'stopping'
+  | 'error';
 
 export interface MediaStreamView {
   publication: MediaPublication;
@@ -38,11 +49,13 @@ export function useVoiceSession({
   const clientRef = useRef<MediaSessionManager | null>(null);
   const detectorCleanupRef = useRef<(() => void) | null>(null);
   const activeConnectionIdRef = useRef<string | null>(null);
-  const reconnectAttemptRef = useRef(0);
-  const reconnectTimerRef = useRef<number | null>(null);
-  const startClientRef = useRef<(target: string, reconnecting?: boolean) => Promise<void>>(() =>
-    Promise.resolve(),
-  );
+  const startClientRef = useRef<
+    (
+      target: string,
+      recovering?: boolean,
+      existingMicrophone?: MediaStreamTrack,
+    ) => Promise<boolean>
+  >(() => Promise.resolve(false));
   const selectedMicrophoneRef = useRef(mediaDevicePreferences.microphone());
   const selectedCameraRef = useRef(mediaDevicePreferences.camera());
   const subscribedPublicationIdsRef = useRef(new Set<string>());
@@ -55,8 +68,17 @@ export function useVoiceSession({
   const screenShareManagerRef = useRef<ScreenShareManager | null>(null);
   const statsCollectorRef = useRef<MediaStatsCollector | null>(null);
   const voiceControlsRef = useRef(INITIAL_VOICE_CONTROL_STATE);
+  const microphoneTrackRef = useRef<MediaStreamTrack | null>(null);
+  const cameraWantedRef = useRef(false);
+  const screenWantedRef = useRef(false);
+  const userRequestedDisconnectRef = useRef(false);
+  const recoveryOperationRef = useRef<Promise<boolean> | null>(null);
+  const pendingPublicationClosuresRef = useRef(new Map<string, MediaEndReason>());
+  const sessionGenerationRef = useRef(0);
 
-  const [status, setStatus] = useState<'connected' | 'idle' | 'joining' | 'reconnecting'>('idle');
+  const [status, setStatus] = useState<
+    'connected' | 'idle' | 'joining' | 'reconnecting' | 'recovering'
+  >('idle');
   const [error, setError] = useState('');
   const [voiceControls, setVoiceControls] = useState(INITIAL_VOICE_CONTROL_STATE);
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
@@ -68,6 +90,12 @@ export function useVoiceSession({
   const [cameraState, setCameraState] = useState<TrackLifecycleState>('idle');
   const [screenState, setScreenState] = useState<TrackLifecycleState>('idle');
   const [debugStats, setDebugStats] = useState<MediaStatsSnapshot | null>(null);
+  const [connectionSnapshot, setConnectionSnapshot] = useState<MediaConnectionSnapshot | null>(
+    null,
+  );
+  const [recoveryAttempts, setRecoveryAttempts] = useState(0);
+  const [lastRecoveryReason, setLastRecoveryReason] = useState('');
+  const [reconciliationNeeded, setReconciliationNeeded] = useState(false);
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -99,7 +127,7 @@ export function useVoiceSession({
       setCameraState('idle');
       setLocalMedia((current) => current.filter((item) => item.publication.source !== 'camera'));
       setError('Sua câmera foi desconectada. O áudio continua conectado.');
-      void clientRef.current?.closePublication('camera').catch(() => undefined);
+      void clientRef.current?.closePublication('camera', 'device_removed').catch(() => undefined);
     }
   }, []);
 
@@ -126,8 +154,13 @@ export function useVoiceSession({
   }, []);
 
   const startClient = useCallback(
-    async (targetConnectionId: string, reconnecting = false) => {
-      setStatus(reconnecting ? 'reconnecting' : 'joining');
+    async (
+      targetConnectionId: string,
+      recovering = false,
+      existingMicrophone?: MediaStreamTrack,
+    ): Promise<boolean> => {
+      const generation = sessionGenerationRef.current;
+      setStatus(recovering ? 'recovering' : 'joining');
       setError('');
       const client = new MediaSessionManager(
         roomId,
@@ -141,46 +174,33 @@ export function useVoiceSession({
           ]);
         },
         removeRemoteMedia,
-        (connectionState) => {
-          if (connectionState === 'connected') {
-            reconnectAttemptRef.current = 0;
+        (snapshot) => {
+          if (clientRef.current !== client || generation !== sessionGenerationRef.current) return;
+          setConnectionSnapshot(snapshot);
+          if (snapshot.connectionState === 'connected') {
             setStatus('connected');
             setError('');
           }
-          if (connectionState === 'failed') {
+          if (snapshot.connectionState === 'failed' || snapshot.iceConnectionState === 'failed') {
             setStatus('reconnecting');
-            setError('Sua conexão de mídia foi interrompida. Estamos tentando reconectar.');
-            reconnectAttemptRef.current += 1;
-            if (reconnectAttemptRef.current > 5 || reconnectTimerRef.current !== null) return;
-            const delay = Math.min(1_000 * 2 ** (reconnectAttemptRef.current - 1), 15_000);
-            reconnectTimerRef.current = window.setTimeout(() => {
-              reconnectTimerRef.current = null;
-              const failedClient = clientRef.current;
-              clientRef.current = null;
-              detectorCleanupRef.current?.();
-              detectorCleanupRef.current = null;
-              setLocalMedia([]);
-              setRemoteMedia([]);
-              setCameraState('idle');
-              setScreenState('idle');
-              subscribedPublicationIdsRef.current.clear();
-              void failedClient?.stop().finally(() => {
-                if (activeConnectionIdRef.current === targetConnectionId) {
-                  void startClientRef.current(targetConnectionId, true);
-                }
-              });
-            }, delay);
           }
         },
       );
       clientRef.current = client;
       activeConnectionIdRef.current = targetConnectionId;
       try {
-        const track = await client.start(selectedMicrophoneRef.current || undefined);
+        const track = await client.start(
+          selectedMicrophoneRef.current || undefined,
+          existingMicrophone,
+        );
+        if (generation !== sessionGenerationRef.current || userRequestedDisconnectRef.current) {
+          await client.detachForRecovery();
+          return false;
+        }
         client.setMuted(effectiveMuted(voiceControlsRef.current));
+        microphoneTrackRef.current = track;
         attachDetector(track);
         await refreshDevices();
-        reconnectAttemptRef.current = 0;
         setStatus('connected');
         if (import.meta.env.DEV) {
           statsCollectorRef.current?.stop();
@@ -190,11 +210,13 @@ export function useVoiceSession({
           );
           statsCollectorRef.current.start();
         }
+        return true;
       } catch (caught) {
         await client.stop();
         if (clientRef.current === client) clientRef.current = null;
-        setStatus('idle');
-        setError(mediaErrorMessage(caught));
+        setStatus(recovering ? 'reconnecting' : 'idle');
+        if (!recovering) setError(mediaErrorMessage(caught));
+        return false;
       }
     },
     [attachDetector, refreshDevices, removeRemoteMedia, roomId],
@@ -206,23 +228,28 @@ export function useVoiceSession({
 
   const join = useCallback(async () => {
     if (!connectionId || status !== 'idle') return;
+    userRequestedDisconnectRef.current = false;
+    sessionGenerationRef.current += 1;
     await startClient(connectionId);
   }, [connectionId, startClient, status]);
 
   const leave = useCallback(async () => {
-    if (reconnectTimerRef.current !== null) {
-      window.clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    reconnectAttemptRef.current = 0;
+    userRequestedDisconnectRef.current = true;
+    sessionGenerationRef.current += 1;
+    recoveryOperationRef.current = null;
     statsCollectorRef.current?.stop();
     statsCollectorRef.current = null;
     setDebugStats(null);
+    setConnectionSnapshot(null);
+    setRecoveryAttempts(0);
+    setLastRecoveryReason('');
+    setReconciliationNeeded(false);
     detectorCleanupRef.current?.();
     detectorCleanupRef.current = null;
     const client = clientRef.current;
     clientRef.current = null;
     activeConnectionIdRef.current = null;
+    microphoneTrackRef.current = null;
     subscribedPublicationIdsRef.current.clear();
     setRemoteMedia([]);
     setLocalMedia([]);
@@ -230,6 +257,9 @@ export function useVoiceSession({
     setScreenState('idle');
     cameraManagerRef.current?.stop();
     screenShareManagerRef.current?.stop();
+    cameraWantedRef.current = false;
+    screenWantedRef.current = false;
+    pendingPublicationClosuresRef.current.clear();
     setStatus('idle');
     voiceControlsRef.current = INITIAL_VOICE_CONTROL_STATE;
     setVoiceControls(INITIAL_VOICE_CONTROL_STATE);
@@ -244,18 +274,9 @@ export function useVoiceSession({
       connectionId !== activeConnectionIdRef.current &&
       clientRef.current
     ) {
-      const previousClient = clientRef.current;
-      detectorCleanupRef.current?.();
-      detectorCleanupRef.current = null;
-      clientRef.current = null;
-      subscribedPublicationIdsRef.current.clear();
-      setLocalMedia([]);
-      setRemoteMedia([]);
-      setCameraState('idle');
-      setScreenState('idle');
-      void previousClient.stop().then(() => startClient(connectionId, true));
+      setStatus('reconnecting');
     }
-  }, [connectionId, startClient]);
+  }, [connectionId]);
 
   useEffect(() => {
     const client = clientRef.current;
@@ -263,7 +284,8 @@ export function useVoiceSession({
     const availableIds = new Set(publications.map((publication) => publication.publicationId));
     for (const publicationId of subscribedPublicationIdsRef.current) {
       if (!availableIds.has(publicationId)) {
-        void client.unsubscribe(publicationId).catch(() => removeRemoteMedia(publicationId));
+        removeRemoteMedia(publicationId);
+        void client.unsubscribe(publicationId).catch(() => undefined);
       }
     }
     for (const publication of publications) {
@@ -278,7 +300,8 @@ export function useVoiceSession({
 
   useEffect(
     () => () => {
-      if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
+      userRequestedDisconnectRef.current = true;
+      sessionGenerationRef.current += 1;
       detectorCleanupRef.current?.();
       statsCollectorRef.current?.stop();
       if (clientRef.current) void clientRef.current.stop();
@@ -319,6 +342,7 @@ export function useVoiceSession({
       }
       try {
         const track = await client.changeMicrophone(deviceId);
+        microphoneTrackRef.current = track;
         client.setMuted(effectiveMuted(voiceControlsRef.current));
         attachDetector(track);
         selectedMicrophoneRef.current = deviceId;
@@ -337,7 +361,9 @@ export function useVoiceSession({
     if (!client || status !== 'connected' || cameraState !== 'idle' || cameraBusyRef.current)
       return;
     cameraBusyRef.current = true;
+    cameraWantedRef.current = true;
     const generation = cameraGenerationRef.current;
+    const sessionGeneration = sessionGenerationRef.current;
     setCameraState('requesting-permission');
     setError('');
     let track: MediaStreamTrack | undefined;
@@ -346,6 +372,7 @@ export function useVoiceSession({
       const cameraStream = await cameraManagerRef.current.start(
         selectedCameraRef.current || undefined,
       );
+      if (sessionGeneration !== sessionGenerationRef.current) return;
       if (generation !== cameraGenerationRef.current) {
         cameraManagerRef.current.stop();
         return;
@@ -355,8 +382,9 @@ export function useVoiceSession({
       track.contentHint = 'motion';
       setCameraState('publishing');
       const publication = await client.publishTrack(track, cameraStream, 'camera');
+      if (sessionGeneration !== sessionGenerationRef.current) return;
       if (generation !== cameraGenerationRef.current || track.readyState === 'ended') {
-        await client.closePublication('camera').catch(() => undefined);
+        await client.closePublication('camera', 'error').catch(() => undefined);
         cameraManagerRef.current.stop();
         setCameraState('idle');
         return;
@@ -368,6 +396,8 @@ export function useVoiceSession({
       setCameraState('active');
       await refreshDevices();
     } catch (caught) {
+      if (sessionGeneration !== sessionGenerationRef.current) return;
+      cameraWantedRef.current = false;
       cameraManagerRef.current?.stop();
       setCameraState('error');
       setError(mediaErrorMessage(caught, 'câmera'));
@@ -378,17 +408,29 @@ export function useVoiceSession({
   }, [cameraState, refreshDevices, status]);
 
   const stopCamera = useCallback(async () => {
-    if (!clientRef.current || cameraState === 'idle' || cameraState === 'stopping') return;
+    if (cameraState === 'idle' || cameraState === 'stopping') return;
     cameraGenerationRef.current += 1;
+    cameraWantedRef.current = false;
+    const client = clientRef.current;
+    const publicationId = client?.localPublication('camera')?.publicationId;
     cameraManagerRef.current?.stop();
+    setLocalMedia((current) => current.filter((item) => item.publication.source !== 'camera'));
     setCameraState('stopping');
-    try {
-      await clientRef.current.closePublication('camera');
-      setLocalMedia((current) => current.filter((item) => item.publication.source !== 'camera'));
+    if (!client) {
       setCameraState('idle');
-    } catch (caught) {
-      setCameraState('error');
-      setError(mediaErrorMessage(caught, 'câmera'));
+      return;
+    }
+    try {
+      await client.closePublication('camera', 'user_stop');
+      if (publicationId) pendingPublicationClosuresRef.current.delete(publicationId);
+      setReconciliationNeeded(pendingPublicationClosuresRef.current.size > 0);
+      setCameraState('idle');
+    } catch {
+      if (publicationId) {
+        pendingPublicationClosuresRef.current.set(publicationId, 'user_stop');
+        setReconciliationNeeded(true);
+      }
+      setCameraState('idle');
     }
   }, [cameraState]);
 
@@ -401,13 +443,28 @@ export function useVoiceSession({
         mediaDevicePreferences.setCamera(deviceId);
         return;
       }
+      if (cameraBusyRef.current) return;
+      cameraBusyRef.current = true;
+      const operation = cameraGenerationRef.current + 1;
+      cameraGenerationRef.current = operation;
+      const sessionGeneration = sessionGenerationRef.current;
+      const currentFacingMode = cameraManagerRef.current?.currentTrack()?.getSettings().facingMode;
+      const preferredFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+      setCameraState('switching');
       try {
         cameraManagerRef.current ??= new CameraManager();
-        const stream = await cameraManagerRef.current.replace(deviceId, (replacement) =>
-          client.replaceLocalTrack('camera', replacement),
+        const stream = await cameraManagerRef.current.replace(
+          deviceId,
+          (replacement) => client.replaceLocalTrack('camera', replacement),
+          preferredFacingMode,
         );
         const replacement = stream.getVideoTracks()[0];
         if (!replacement) throw new DOMException('Câmera indisponível', 'NotFoundError');
+        if (sessionGeneration !== sessionGenerationRef.current) return;
+        if (operation !== cameraGenerationRef.current || userRequestedDisconnectRef.current) {
+          replacement.stop();
+          return;
+        }
         setLocalMedia((current) =>
           current.map((item) =>
             item.publication.source === 'camera'
@@ -415,12 +472,23 @@ export function useVoiceSession({
               : item,
           ),
         );
-        selectedCameraRef.current = deviceId;
-        setSelectedCamera(deviceId);
-        mediaDevicePreferences.setCamera(deviceId);
+        const activeDeviceId = replacement.getSettings().deviceId ?? deviceId;
+        selectedCameraRef.current = activeDeviceId;
+        setSelectedCamera(activeDeviceId);
+        mediaDevicePreferences.setCamera(activeDeviceId);
         setError('');
+        setCameraState('active');
       } catch {
+        if (
+          sessionGeneration !== sessionGenerationRef.current ||
+          userRequestedDisconnectRef.current
+        ) {
+          return;
+        }
         setError('Não foi possível usar esta câmera. O dispositivo anterior continua ativo.');
+        setCameraState(cameraManagerRef.current?.currentTrack() ? 'active' : 'idle');
+      } finally {
+        cameraBusyRef.current = false;
       }
     },
     [cameraState],
@@ -435,27 +503,40 @@ export function useVoiceSession({
     if (nextCamera) await changeCamera(nextCamera.deviceId);
   }, [cameras, changeCamera]);
 
-  const stopScreenShare = useCallback(async () => {
-    if (!clientRef.current || screenStoppingRef.current) return;
+  const stopScreenShare = useCallback(async (reason: MediaEndReason = 'user_stop') => {
+    if (screenStoppingRef.current) return;
     screenStoppingRef.current = true;
     screenGenerationRef.current += 1;
+    screenWantedRef.current = false;
+    const client = clientRef.current;
+    const publicationId = client?.localPublication('screen-video')?.publicationId;
+    setLocalMedia((current) =>
+      current.filter(
+        (item) =>
+          item.publication.source !== 'screen-video' && item.publication.source !== 'screen-audio',
+      ),
+    );
     screenShareManagerRef.current?.stop();
     setScreenState('stopping');
-    try {
-      await clientRef.current.closePublication('screen-audio').catch(() => undefined);
-      await clientRef.current.closePublication('screen-video');
-      setLocalMedia((current) =>
-        current.filter(
-          (item) =>
-            item.publication.source !== 'screen-video' &&
-            item.publication.source !== 'screen-audio',
-        ),
-      );
+    if (!client) {
       setScreenState('idle');
-    } catch (caught) {
-      setScreenState('error');
-      setError(mediaErrorMessage(caught, 'compartilhamento'));
+      screenStoppingRef.current = false;
+      return;
+    }
+    try {
+      await client.closePublication('screen-video', reason);
+      if (publicationId) pendingPublicationClosuresRef.current.delete(publicationId);
+      setReconciliationNeeded(pendingPublicationClosuresRef.current.size > 0);
+    } catch {
+      if (publicationId) {
+        pendingPublicationClosuresRef.current.set(publicationId, reason);
+        setReconciliationNeeded(true);
+      }
+      if (reason !== 'user_stop') {
+        setError('O compartilhamento de tela foi interrompido.');
+      }
     } finally {
+      setScreenState('idle');
       screenStoppingRef.current = false;
     }
   }, []);
@@ -465,21 +546,34 @@ export function useVoiceSession({
     if (!client || status !== 'connected' || screenState !== 'idle' || screenBusyRef.current)
       return;
     screenBusyRef.current = true;
+    screenWantedRef.current = true;
     const generation = screenGenerationRef.current;
+    const sessionGeneration = sessionGenerationRef.current;
     setScreenState('requesting-permission');
     setError('');
     let stream: MediaStream | undefined;
     try {
       screenShareManagerRef.current ??= new ScreenShareManager();
       stream = await screenShareManagerRef.current.start();
-      if (generation !== screenGenerationRef.current) return;
+      if (
+        generation !== screenGenerationRef.current ||
+        sessionGeneration !== sessionGenerationRef.current
+      ) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const videoTrack = stream.getVideoTracks()[0];
       if (!videoTrack) throw new DOMException('Tela indisponível', 'NotFoundError');
       videoTrack.contentHint = 'detail';
       setScreenState('publishing');
       const videoPublication = await client.publishTrack(videoTrack, stream, 'screen-video');
-      if (generation !== screenGenerationRef.current || videoTrack.readyState === 'ended') {
-        await client.closePublication('screen-video').catch(() => undefined);
+      if (
+        generation !== screenGenerationRef.current ||
+        sessionGeneration !== sessionGenerationRef.current ||
+        videoTrack.readyState === 'ended'
+      ) {
+        screenWantedRef.current = false;
+        await client.closePublication('screen-video', 'error').catch(() => undefined);
         setScreenState('idle');
         return;
       }
@@ -487,12 +581,21 @@ export function useVoiceSession({
         ...current,
         { publication: videoPublication, stream: new MediaStream([videoTrack]) },
       ]);
-      videoTrack.addEventListener('ended', () => void stopScreenShare(), { once: true });
+      videoTrack.addEventListener('ended', () => void stopScreenShare('track_ended'), {
+        once: true,
+      });
       const audioTrack = stream.getAudioTracks()[0];
-      if (audioTrack && generation === screenGenerationRef.current) {
+      if (
+        audioTrack &&
+        generation === screenGenerationRef.current &&
+        sessionGeneration === sessionGenerationRef.current
+      ) {
         const audioPublication = await client.publishTrack(audioTrack, stream, 'screen-audio');
-        if (generation !== screenGenerationRef.current) {
-          await client.closePublication('screen-audio').catch(() => undefined);
+        if (
+          generation !== screenGenerationRef.current ||
+          sessionGeneration !== sessionGenerationRef.current
+        ) {
+          await client.closePublication('screen-audio', 'error').catch(() => undefined);
           return;
         }
         setLocalMedia((current) => [
@@ -502,10 +605,14 @@ export function useVoiceSession({
       }
       setScreenState('active');
     } catch (caught) {
+      if (sessionGeneration !== sessionGenerationRef.current) {
+        stream?.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      screenWantedRef.current = false;
       stream?.getTracks().forEach((track) => track.stop());
       screenShareManagerRef.current?.stop();
-      await client.closePublication('screen-audio').catch(() => undefined);
-      await client.closePublication('screen-video').catch(() => undefined);
+      await client.closePublication('screen-video', 'error').catch(() => undefined);
       setLocalMedia((current) =>
         current.filter(
           (item) =>
@@ -521,6 +628,251 @@ export function useVoiceSession({
     }
   }, [screenState, status, stopScreenShare]);
 
+  const reconcile = useCallback(
+    async (reason: string): Promise<boolean> => {
+      if (userRequestedDisconnectRef.current || status === 'idle') return true;
+      if (recoveryOperationRef.current) return recoveryOperationRef.current;
+
+      const operation = (async () => {
+        const currentClient = clientRef.current;
+        const currentMicrophone = microphoneTrackRef.current;
+        const connectionMatches = activeConnectionIdRef.current === connectionId;
+        const snapshot = (() => {
+          try {
+            return currentClient?.connectionSnapshot() ?? null;
+          } catch {
+            return null;
+          }
+        })();
+        const peerHealthy =
+          snapshot?.connectionState === 'connected' &&
+          (snapshot.iceConnectionState === 'connected' ||
+            snapshot.iceConnectionState === 'completed');
+        const microphoneHealthy =
+          currentMicrophone !== null && currentMicrophone.readyState !== 'ended';
+        const cameraTrack = cameraManagerRef.current?.currentStream()?.getVideoTracks()[0];
+        const cameraHealthy =
+          !cameraWantedRef.current ||
+          (cameraTrack !== undefined && cameraTrack.readyState !== 'ended');
+        const screenTrack = screenShareManagerRef.current?.currentStream()?.getVideoTracks()[0];
+        const screenHealthy =
+          !screenWantedRef.current ||
+          (screenTrack !== undefined && screenTrack.readyState !== 'ended');
+        const pendingClosures = [...pendingPublicationClosuresRef.current];
+        if (currentClient && connectionMatches && pendingClosures.length > 0) {
+          try {
+            for (const [publicationId, endReason] of pendingClosures) {
+              await currentClient.retryClosePublication(publicationId, endReason);
+              pendingPublicationClosuresRef.current.delete(publicationId);
+            }
+            setReconciliationNeeded(false);
+          } catch {
+            return false;
+          }
+        }
+        if (
+          currentClient &&
+          connectionMatches &&
+          peerHealthy &&
+          microphoneHealthy &&
+          cameraHealthy &&
+          screenHealthy
+        ) {
+          try {
+            if (!currentClient.localTrack('microphone') && currentMicrophone) {
+              await currentClient.publishTrack(
+                currentMicrophone,
+                new MediaStream([currentMicrophone]),
+                'microphone',
+                false,
+              );
+            }
+            if (cameraWantedRef.current && cameraTrack && !currentClient.localTrack('camera')) {
+              const publication = await currentClient.publishTrack(
+                cameraTrack,
+                new MediaStream([cameraTrack]),
+                'camera',
+                false,
+              );
+              setLocalMedia((current) => [
+                ...current.filter((item) => item.publication.source !== 'camera'),
+                { publication, stream: new MediaStream([cameraTrack]) },
+              ]);
+            }
+            if (
+              screenWantedRef.current &&
+              screenTrack &&
+              !currentClient.localTrack('screen-video')
+            ) {
+              const screenStream = screenShareManagerRef.current?.currentStream();
+              if (!screenStream) throw new DOMException('Tela indisponível', 'NotFoundError');
+              const videoPublication = await currentClient.publishTrack(
+                screenTrack,
+                screenStream,
+                'screen-video',
+                false,
+              );
+              setLocalMedia((current) => [
+                ...current.filter((item) => item.publication.source !== 'screen-video'),
+                { publication: videoPublication, stream: new MediaStream([screenTrack]) },
+              ]);
+            }
+            const screenStream = screenShareManagerRef.current?.currentStream();
+            const screenAudioTrack = screenStream?.getAudioTracks()[0];
+            if (
+              screenWantedRef.current &&
+              screenStream &&
+              screenAudioTrack &&
+              screenAudioTrack.readyState !== 'ended' &&
+              !currentClient.localTrack('screen-audio')
+            ) {
+              const audioPublication = await currentClient.publishTrack(
+                screenAudioTrack,
+                screenStream,
+                'screen-audio',
+                false,
+              );
+              setLocalMedia((current) => [
+                ...current.filter((item) => item.publication.source !== 'screen-audio'),
+                { publication: audioPublication, stream: new MediaStream([screenAudioTrack]) },
+              ]);
+            }
+            setConnectionSnapshot(snapshot);
+            setStatus('connected');
+            return true;
+          } catch {
+            // A failed isolated repair falls through to an authoritative session rebuild.
+          }
+        }
+        if (!connectionId) return false;
+
+        const generation = sessionGenerationRef.current + 1;
+        sessionGenerationRef.current = generation;
+        setRecoveryAttempts((current) => current + 1);
+        setLastRecoveryReason(reason);
+        setStatus('recovering');
+        detectorCleanupRef.current?.();
+        detectorCleanupRef.current = null;
+        statsCollectorRef.current?.stop();
+        statsCollectorRef.current = null;
+        subscribedPublicationIdsRef.current.clear();
+        setRemoteMedia([]);
+        if (currentClient) await currentClient.detachForRecovery();
+        if (clientRef.current === currentClient) clientRef.current = null;
+
+        const microphone =
+          currentMicrophone && currentMicrophone.readyState !== 'ended'
+            ? currentMicrophone
+            : undefined;
+        const started = await startClientRef.current(connectionId, true, microphone);
+        if (!started || generation !== sessionGenerationRef.current) return false;
+        pendingPublicationClosuresRef.current.clear();
+        setReconciliationNeeded(false);
+        const recoveredClient = clientRef.current;
+        if (!recoveredClient) return false;
+
+        if (cameraWantedRef.current) {
+          try {
+            cameraManagerRef.current ??= new CameraManager();
+            const cameraStream = await cameraManagerRef.current.start(
+              selectedCameraRef.current || undefined,
+            );
+            const cameraTrack = cameraStream.getVideoTracks()[0];
+            if (!cameraTrack || cameraTrack.readyState === 'ended') {
+              throw new DOMException('Câmera indisponível', 'NotFoundError');
+            }
+            const publication = await recoveredClient.publishTrack(
+              cameraTrack,
+              cameraStream,
+              'camera',
+              false,
+            );
+            setLocalMedia((current) => [
+              ...current.filter((item) => item.publication.source !== 'camera'),
+              { publication, stream: new MediaStream([cameraTrack]) },
+            ]);
+            setCameraState('active');
+          } catch {
+            cameraWantedRef.current = false;
+            cameraManagerRef.current?.stop();
+            setCameraState('idle');
+            setLocalMedia((current) =>
+              current.filter((item) => item.publication.source !== 'camera'),
+            );
+            setError('A câmera foi interrompida. A chamada de voz foi restabelecida.');
+          }
+        }
+
+        if (screenWantedRef.current) {
+          const screenStream = screenShareManagerRef.current?.currentStream();
+          const screenTrack = screenStream?.getVideoTracks()[0];
+          if (screenStream && screenTrack && screenTrack.readyState !== 'ended') {
+            try {
+              const videoPublication = await recoveredClient.publishTrack(
+                screenTrack,
+                screenStream,
+                'screen-video',
+                false,
+              );
+              const recoveredScreenMedia: MediaStreamView[] = [
+                { publication: videoPublication, stream: new MediaStream([screenTrack]) },
+              ];
+              const audioTrack = screenStream.getAudioTracks()[0];
+              if (audioTrack && audioTrack.readyState !== 'ended') {
+                const audioPublication = await recoveredClient.publishTrack(
+                  audioTrack,
+                  screenStream,
+                  'screen-audio',
+                  false,
+                );
+                recoveredScreenMedia.push({
+                  publication: audioPublication,
+                  stream: new MediaStream([audioTrack]),
+                });
+              }
+              setLocalMedia((current) => [
+                ...current.filter(
+                  (item) =>
+                    item.publication.source !== 'screen-video' &&
+                    item.publication.source !== 'screen-audio',
+                ),
+                ...recoveredScreenMedia,
+              ]);
+              setScreenState('active');
+            } catch {
+              screenWantedRef.current = false;
+              screenShareManagerRef.current?.stop();
+              setScreenState('idle');
+              setError('O compartilhamento de tela foi interrompido.');
+            }
+          } else {
+            screenWantedRef.current = false;
+            screenShareManagerRef.current?.stop();
+            setScreenState('idle');
+            setLocalMedia((current) =>
+              current.filter(
+                (item) =>
+                  item.publication.source !== 'screen-video' &&
+                  item.publication.source !== 'screen-audio',
+              ),
+            );
+            setError('O compartilhamento de tela foi interrompido.');
+          }
+        }
+
+        setStatus('connected');
+        return true;
+      })();
+      recoveryOperationRef.current = operation;
+      try {
+        return await operation;
+      } finally {
+        if (recoveryOperationRef.current === operation) recoveryOperationRef.current = null;
+      }
+    },
+    [connectionId, status],
+  );
+
   return {
     cameraState,
     cameras,
@@ -528,13 +880,32 @@ export function useVoiceSession({
     changeMicrophone,
     deafened: voiceControls.deafened,
     debugStats,
+    debugHealth: {
+      activePublications: clientRef.current?.localPublicationSources() ?? [],
+      activeSubscriptions: clientRef.current?.remotePublicationCount() ?? 0,
+      camera: cameraManagerRef.current?.currentTrack()?.readyState ?? 'absent',
+      cameraSettings: cameraManagerRef.current?.currentTrack()?.getSettings() ?? null,
+      connectionState: connectionSnapshot?.connectionState ?? 'unavailable',
+      iceConnectionState: connectionSnapshot?.iceConnectionState ?? 'unavailable',
+      iceGatheringState: connectionSnapshot?.iceGatheringState ?? 'unavailable',
+      microphone: microphoneTrackRef.current?.readyState ?? 'absent',
+      screen:
+        screenShareManagerRef.current?.currentStream()?.getVideoTracks()[0]?.readyState ?? 'absent',
+      sessionId: clientRef.current?.maskedSessionId() ?? '—',
+      signalingState: connectionSnapshot?.signalingState ?? 'unavailable',
+    },
+    connectionSnapshot,
     error,
     join,
     leave,
     localMedia,
+    lastRecoveryReason,
     microphones,
     muted: effectiveMuted(voiceControls),
     remoteMedia,
+    reconcile,
+    reconciliationNeeded,
+    recoveryAttempts,
     screenState,
     selectedCamera,
     selectedMicrophone,

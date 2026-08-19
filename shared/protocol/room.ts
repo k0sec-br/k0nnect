@@ -1,10 +1,23 @@
 import { z } from 'zod';
 
-export const ROOM_PROTOCOL_VERSION = 2 as const;
+export const ROOM_PROTOCOL_VERSION = 3 as const;
 
 export const MEDIA_SOURCES = ['microphone', 'camera', 'screen-video', 'screen-audio'] as const;
 export const mediaSourceSchema = z.enum(MEDIA_SOURCES);
 export type MediaSource = z.infer<typeof mediaSourceSchema>;
+
+export const MEDIA_END_REASONS = [
+  'user_stop',
+  'track_ended',
+  'device_removed',
+  'network_failure',
+  'publisher_left',
+  'publication_replaced',
+  'session_rebuilt',
+  'error',
+] as const;
+export const mediaEndReasonSchema = z.enum(MEDIA_END_REASONS);
+export type MediaEndReason = z.infer<typeof mediaEndReasonSchema>;
 
 export const mediaPublicationSchema = z.object({
   publicationId: z.string().uuid(),
@@ -40,7 +53,12 @@ export const clientRoomMessageSchema = z.discriminatedUnion('type', [
   z.object({
     v: z.literal(ROOM_PROTOCOL_VERSION),
     type: z.literal('heartbeat'),
-    payload: z.object({}).strict(),
+    payload: z
+      .object({
+        visibility: z.enum(['foreground', 'background']).optional(),
+        connectionEpoch: z.number().int().positive().optional(),
+      })
+      .strict(),
   }),
 ]);
 
@@ -54,6 +72,9 @@ export const serverRoomMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('room.ready'),
     payload: z.object({
       connectionId: z.string().uuid(),
+      callInstanceId: z.string().uuid(),
+      connectionEpoch: z.number().int().positive(),
+      resumed: z.boolean(),
       participants: z.array(roomParticipantSchema),
       publications: z.array(mediaPublicationSchema),
     }),
@@ -81,12 +102,22 @@ export const serverRoomMessageSchema = z.discriminatedUnion('type', [
   z.object({
     ...serverEnvelope,
     type: z.literal('media.unpublished'),
-    payload: z.object({ publicationId: z.string().uuid(), userId: z.string().uuid() }),
+    payload: z.object({
+      publicationId: z.string().uuid(),
+      userId: z.string().uuid(),
+      source: mediaSourceSchema,
+      reason: mediaEndReasonSchema,
+    }),
   }),
   z.object({
     ...serverEnvelope,
     type: z.literal('connection.restored'),
-    payload: z.object({}).strict(),
+    payload: z.object({ connectionEpoch: z.number().int().positive() }).strict(),
+  }),
+  z.object({
+    ...serverEnvelope,
+    type: z.literal('heartbeat.ack'),
+    payload: z.object({ serverTime: z.number().int().nonnegative() }).strict(),
   }),
   z.object({
     ...serverEnvelope,

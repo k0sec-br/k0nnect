@@ -12,11 +12,16 @@ Todas as mudanças relevantes serão documentadas neste arquivo, seguindo Keep a
 - Câmera, seleção de dispositivos, prévia local e grade responsiva.
 - Compartilhamento de tela com áudio opcional, palco, miniaturas e tela cheia.
 - Diagnóstico WebRTC local disponível apenas no ambiente de desenvolvimento.
+- Supervisor de conexão com state machine, recovery deduplicado e reconciliação após retomada.
+- Retomada autenticada de WebSocket com identidade lógica, epoch e grace period server-side.
+- Razões autoritativas para encerramento de mídia e diagnóstico local de lifecycle/recovery.
 
 ### Changed
 
-- Protocolo de sala v2 com publicações opacas autorizadas pelo Durable Object.
+- Protocolo de sala v3 com heartbeat adaptativo, identificação de retomada e eventos de unpublish com motivo.
 - Uma sessão WebRTC por participante multiplexa microfone, câmera e tela com negociações serializadas.
 - Política de permissões libera microfone, câmera e captura de tela somente para a própria origem.
+- Troca de câmera é transacional, preserva a track anterior em falhas e mantém o microfone intacto.
+- Encerramento de tela remove a UI imediatamente, agrupa áudio/vídeo e preserva a chamada.
 
 [Unreleased]: https://github.com/k0sec-br/k0nnect/compare/main...develop

@@ -32,9 +32,13 @@ export const mediaDevicePreferences = {
   },
 };
 
-export function cameraConstraints(deviceId?: string): MediaTrackConstraints {
+export function cameraConstraints(
+  deviceId?: string,
+  facingMode?: 'environment' | 'user',
+): MediaTrackConstraints {
   return {
     ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    ...(!deviceId && facingMode ? { facingMode: { ideal: facingMode } } : {}),
     width: { ideal: 1280 },
     height: { ideal: 720 },
     frameRate: { ideal: 30, max: 30 },

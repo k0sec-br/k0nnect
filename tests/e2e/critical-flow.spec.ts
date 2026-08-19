@@ -14,6 +14,8 @@ const RECOVERY_CODES = Array.from(
 async function installBrowserFakes(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const testWindow = window as typeof window & {
+      __k0nnectDropSocket(): void;
+      __k0nnectFailPeer(): void;
       __k0nnectSocketStats: { closed: number; created: number };
     };
     testWindow.__k0nnectSocketStats = { closed: 0, created: 0 };
@@ -44,6 +46,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
       id: 'local-audio',
       kind: 'audio',
       enabled: true,
+      readyState: 'live',
       stop() {},
       addEventListener() {},
       getSettings() {
@@ -54,6 +57,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
       id: 'local-camera',
       kind: 'video',
       enabled: true,
+      readyState: 'live',
       stop() {},
       addEventListener() {},
       getSettings() {
@@ -64,6 +68,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
       id: 'local-screen',
       kind: 'video',
       enabled: true,
+      readyState: 'live',
       stop() {},
       addEventListener() {},
       getSettings() {
@@ -149,11 +154,19 @@ async function installBrowserFakes(page: Page): Promise<void> {
     window.cancelAnimationFrame = () => undefined;
 
     class FakePeerConnection extends EventTarget {
+      static active: FakePeerConnection | null = null;
       connectionState = 'new';
+      iceConnectionState = 'connected';
+      iceGatheringState = 'complete';
+      signalingState = 'stable';
       private transceivers: {
         mid: string;
         sender: { track: unknown; replaceTrack(track: unknown): Promise<void> };
       }[] = [];
+      constructor() {
+        super();
+        FakePeerConnection.active = this;
+      }
       addTransceiver(track: unknown, options?: RTCRtpTransceiverInit) {
         for (const encoding of options?.sendEncodings ?? []) {
           if (encoding.rid && !/^[A-Za-z0-9]+$/u.test(encoding.rid)) {
@@ -193,11 +206,18 @@ async function installBrowserFakes(page: Page): Promise<void> {
       close() {
         this.connectionState = 'closed';
       }
+      fail() {
+        this.connectionState = 'failed';
+        this.iceConnectionState = 'failed';
+        this.dispatchEvent(new Event('iceconnectionstatechange'));
+        this.dispatchEvent(new Event('connectionstatechange'));
+      }
     }
     Object.defineProperty(window, 'RTCPeerConnection', {
       configurable: true,
       value: FakePeerConnection,
     });
+    testWindow.__k0nnectFailPeer = () => FakePeerConnection.active?.fail();
 
     let fullscreenElement: Element | null = null;
     Object.defineProperty(document, 'fullscreenEnabled', { configurable: true, value: true });
@@ -221,22 +241,29 @@ async function installBrowserFakes(page: Page): Promise<void> {
     });
 
     class FakeWebSocket extends EventTarget {
+      static active: FakeWebSocket | null = null;
       static readonly CONNECTING = 0;
       static readonly OPEN = 1;
       static readonly CLOSED = 3;
       readyState = FakeWebSocket.CONNECTING;
-      constructor(_url: string) {
+      constructor(url: string) {
         super();
+        FakeWebSocket.active = this;
         testWindow.__k0nnectSocketStats.created += 1;
+        const socketUrl = new URL(url);
+        const requestedEpoch = Number(socketUrl.searchParams.get('connectionEpoch'));
         window.setTimeout(() => {
           this.readyState = FakeWebSocket.OPEN;
           this.dispatchEvent(
             new MessageEvent('message', {
               data: JSON.stringify({
-                v: 2,
+                v: 3,
                 type: 'room.ready',
                 payload: {
+                  callInstanceId: '66666666-6666-4666-8666-666666666666',
                   connectionId: '22222222-2222-4222-8222-222222222222',
+                  connectionEpoch: Number.isSafeInteger(requestedEpoch) ? requestedEpoch : 1,
+                  resumed: socketUrl.searchParams.has('callInstanceId'),
                   participants: [
                     {
                       userId: '11111111-1111-4111-8111-111111111111',
@@ -261,6 +288,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
       }
     }
     Object.defineProperty(window, 'WebSocket', { configurable: true, value: FakeWebSocket });
+    testWindow.__k0nnectDropSocket = () => FakeWebSocket.active?.close(1012, 'Falha transitória');
   });
 }
 
@@ -296,7 +324,7 @@ async function mockApi(page: Page): Promise<{ create: number; publish: number }>
       if (action === 'turn') data = { iceServers: [] };
       else if (action === 'create') {
         realtimeStats.create += 1;
-        data = { sessionId: 'session_1' };
+        data = { sessionId: `session_${realtimeStats.create}` };
       } else if (action === 'publish') {
         realtimeStats.publish += 1;
         expect(realtimeRequest.mid).toBeTruthy();
@@ -373,6 +401,49 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(page.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
   expect(realtimeStats.create).toBe(1);
   expect(realtimeStats.publish).toBe(3);
+  await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __k0nnectDropSocket(): void;
+      }
+    ).__k0nnectDropSocket(),
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              __k0nnectSocketStats: { created: number };
+            }
+          ).__k0nnectSocketStats.created,
+      ),
+    )
+    .toBe(2);
+  expect(realtimeStats.create).toBe(1);
+  expect(realtimeStats.publish).toBe(3);
+
+  await page.evaluate(() =>
+    (
+      window as typeof window & {
+        __k0nnectFailPeer(): void;
+      }
+    ).__k0nnectFailPeer(),
+  );
+  await expect.poll(() => realtimeStats.create).toBe(2);
+  await expect.poll(() => realtimeStats.publish).toBe(6);
+  await expect(page.getByRole('button', { name: 'Desativar microfone' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cameraSwitchButton = page.getByRole('button', { name: 'Trocar câmera' });
+  await expect(cameraSwitchButton).toBeVisible();
+  const cameraSwitchBox = await cameraSwitchButton.boundingBox();
+  expect(cameraSwitchBox).not.toBeNull();
+  expect(Math.abs((cameraSwitchBox?.width ?? 0) - (cameraSwitchBox?.height ?? 0))).toBeLessThan(1);
+  expect(cameraSwitchBox?.width).toBeGreaterThanOrEqual(44);
+  await page.setViewportSize({ width: 1280, height: 720 });
   const socketStatsBeforeNavigation = await page.evaluate(
     () =>
       (
@@ -396,15 +467,15 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await cameraSelect.click();
   await page.getByRole('option', { name: 'Câmera traseira' }).click();
   await expect(cameraSelect).toHaveAttribute('title', 'Câmera traseira');
-  expect(realtimeStats.create).toBe(1);
-  expect(realtimeStats.publish).toBe(3);
+  expect(realtimeStats.create).toBe(2);
+  expect(realtimeStats.publish).toBe(6);
   await page.getByRole('link', { name: 'Voltar' }).click();
   await expect(page).toHaveURL(/\/app$/u);
   await expect(page.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
   await expect(page.getByLabel('Vídeo de Alice (você)')).not.toHaveClass(/is-mirrored/u);
-  expect(realtimeStats.create).toBe(1);
-  expect(realtimeStats.publish).toBe(3);
+  expect(realtimeStats.create).toBe(2);
+  expect(realtimeStats.publish).toBe(6);
   expect(
     await page.evaluate(
       () =>

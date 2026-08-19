@@ -15,6 +15,7 @@ import { apiClient } from '../../lib/api-client';
 import { useAuth } from '../auth/auth-context';
 import { useRoomSocket } from '../rooms/use-room-socket';
 import { useVoiceSession } from '../voice/use-voice-session';
+import { useCallConnectionSupervisor } from './use-call-connection-supervisor';
 
 interface CallContextValue {
   activateRoom(): void;
@@ -23,6 +24,7 @@ interface CallContextValue {
   room: RoomView | null;
   socket: ReturnType<typeof useRoomSocket>;
   voice: ReturnType<typeof useVoiceSession>;
+  connectionState: ReturnType<typeof useCallConnectionSupervisor>['state'];
 }
 
 const CallContext = createContext<CallContextValue | null>(null);
@@ -44,6 +46,24 @@ export function CallProvider({ children }: { children: ReactNode }) {
     updatePresence: socket.updatePresence,
     updateSpeaking: socket.updateSpeaking,
   });
+  const supervisor = useCallConnectionSupervisor({
+    active: Boolean(user && activated),
+    socket,
+    voice,
+  });
+
+  const supervisedVoice = useMemo(
+    () => ({
+      ...voice,
+      leave: async () => {
+        supervisor.disconnect();
+        await voice.leave();
+        supervisor.disconnected();
+        supervisor.resume();
+      },
+    }),
+    [supervisor, voice],
+  );
 
   const activateRoom = useCallback(() => setActivated(true), []);
 
@@ -69,16 +89,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const currentUserId = user?.id ?? null;
     previousUserIdRef.current = currentUserId;
     if (!previousUserId || previousUserId === currentUserId) return;
+    supervisor.disconnect();
+    socket.disconnect();
     void voice.leave();
     setActivated(false);
     setRoom(null);
     setLoadError('');
     roomRequestRef.current = null;
-  }, [user?.id, voice]);
+  }, [socket, supervisor, user?.id, voice]);
 
   const value = useMemo<CallContextValue>(
-    () => ({ activateRoom, config, loadError, room, socket, voice }),
-    [activateRoom, config, loadError, room, socket, voice],
+    () => ({
+      activateRoom,
+      config,
+      connectionState: supervisor.state,
+      loadError,
+      room,
+      socket,
+      voice: supervisedVoice,
+    }),
+    [activateRoom, config, loadError, room, socket, supervisedVoice, supervisor.state],
   );
 
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;

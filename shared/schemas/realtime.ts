@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { mediaSourceSchema } from '../protocol/room';
+import { mediaEndReasonSchema, mediaSourceSchema } from '../protocol/room';
 
 const roomIdSchema = z
   .string()
@@ -58,6 +58,7 @@ export const realtimeSessionRequestSchema = z.discriminatedUnion('action', [
       action: z.literal('close'),
       ...sessionOwnerFields,
       publicationId: publicationIdSchema,
+      reason: mediaEndReasonSchema,
     })
     .strict(),
   z

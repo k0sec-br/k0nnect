@@ -300,7 +300,11 @@
 .connection-status.connection-connected i {
   background: var(--success);
 }
-.connection-status.connection-offline i {
+.connection-status.connection-degraded i,
+.connection-status.connection-suspended i {
+  background: var(--warning);
+}
+.connection-status.connection-failed i {
   background: var(--danger);
 }
 .mobile-menu-button {
@@ -802,6 +806,17 @@
   .mobile-voice-bar .icon-button {
     width: 2.75rem;
     height: 2.75rem;
+  }
+  .mobile-voice-bar .camera-switch-button {
+    width: 2.75rem;
+    height: 2.75rem;
+    aspect-ratio: 1;
+    flex: 0 0 2.75rem;
+  }
+  .mobile-voice-bar .camera-switch-button svg {
+    width: 1.2rem;
+    height: 1.2rem;
+    flex-shrink: 0;
   }
   .member-sidebar {
     width: min(17rem, 86vw);

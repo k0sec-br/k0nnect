@@ -182,18 +182,33 @@ realtimeRoutes.post('/session', async (context) => {
     input.publicationId,
   );
   if (!owned) throw new AppError('FORBIDDEN', 403);
-  if (
-    owned.publication.source === 'screen-video' &&
-    (await room.hasOwnedPublicationSource(
+  const screenAudio =
+    owned.publication.source === 'screen-video'
+      ? await room.resolveOwnedPublicationBySource(
+          authenticated.user.id,
+          input.connectionId,
+          input.sessionId,
+          'screen-audio',
+        )
+      : null;
+  const publicationsToClose = [owned, ...(screenAudio ? [screenAudio] : [])];
+  for (const publication of publicationsToClose) {
+    await room.removePublication(
       authenticated.user.id,
       input.connectionId,
-      'screen-audio',
-    ))
-  ) {
-    throw new AppError('FORBIDDEN', 409);
+      publication.publication.publicationId,
+      input.reason,
+    );
   }
-  const response = await realtime.closeTrack(input.sessionId, owned.mid);
-  await room.removePublication(authenticated.user.id, input.connectionId, input.publicationId);
+  const response = await realtime.closeTracks(
+    input.sessionId,
+    publicationsToClose.map((publication) => publication.mid),
+  );
+  await room.completePublicationClosures(
+    authenticated.user.id,
+    input.connectionId,
+    publicationsToClose.map((publication) => publication.publication.publicationId),
+  );
   return success(context, {
     closed: true,
     sessionDescription: response.sessionDescription,

@@ -466,11 +466,17 @@ export function AppShell(props: AppShellProps) {
                   )}
                 </IconButton>
               )}
-              {props.voice.cameraState === 'active' && props.voice.cameras.length > 1 && (
-                <IconButton label="Alternar câmera" onClick={props.voice.switchCamera}>
-                  <SwitchCameraIcon aria-hidden="true" />
-                </IconButton>
-              )}
+              {['active', 'switching'].includes(props.voice.cameraState) &&
+                props.voice.cameras.length > 1 && (
+                  <IconButton
+                    label="Trocar câmera"
+                    className="camera-switch-button"
+                    disabled={props.voice.cameraState === 'switching'}
+                    onClick={props.voice.switchCamera}
+                  >
+                    <SwitchCameraIcon aria-hidden="true" />
+                  </IconButton>
+                )}
               {props.voice.supportsScreenShare && (
                 <IconButton
                   label={
