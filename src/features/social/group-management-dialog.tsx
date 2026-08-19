@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import type { ConversationSummary, FriendView, SocialStateView } from '../../../shared/types/api';
 import { FormMessage } from '../../components/form-message';
+import { CloseIcon } from '../../components/icons';
 import { apiClient } from '../../lib/api-client';
 
 interface GroupManagementDialogProps {
@@ -85,7 +86,7 @@ export function GroupManagementDialog(props: GroupManagementDialogProps) {
             <h2 id="group-settings-title">Configurar {props.conversation.name}</h2>
           </div>
           <button className="icon-button" type="button" aria-label="Fechar" onClick={props.onClose}>
-            ×
+            <CloseIcon aria-hidden="true" />
           </button>
         </header>
 
@@ -121,6 +122,7 @@ export function GroupManagementDialog(props: GroupManagementDialogProps) {
               ) : isOwner ? (
                 <div>
                   <button
+                    className="button secondary compact"
                     type="button"
                     disabled={busy}
                     onClick={() =>
@@ -137,7 +139,7 @@ export function GroupManagementDialog(props: GroupManagementDialogProps) {
                     Tornar owner
                   </button>
                   <button
-                    className="danger-text"
+                    className="button danger-outline compact"
                     type="button"
                     disabled={busy}
                     onClick={() =>
@@ -201,7 +203,7 @@ export function GroupManagementDialog(props: GroupManagementDialogProps) {
         <footer>
           {isOwner ? (
             <button
-              className="button danger"
+              className="button danger-outline"
               type="button"
               disabled={busy}
               onClick={() => {
@@ -221,7 +223,7 @@ export function GroupManagementDialog(props: GroupManagementDialogProps) {
             </button>
           ) : (
             <button
-              className="button danger"
+              className="button danger-outline"
               type="button"
               disabled={busy}
               onClick={() => {

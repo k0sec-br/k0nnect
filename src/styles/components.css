@@ -72,6 +72,11 @@
 .button.full {
   width: 100%;
 }
+.button.compact {
+  min-height: 2rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
+}
 .button:disabled,
 .icon-button:disabled,
 .rail-item:disabled {
