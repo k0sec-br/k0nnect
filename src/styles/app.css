@@ -574,6 +574,27 @@
   height: 100%;
   min-height: 0;
 }
+.conversation-chat-layer,
+.call-view {
+  height: 100%;
+  min-height: 0;
+}
+.call-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.call-view-header .main-header-title > span {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-view-chat-button {
+  min-height: 2rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.74rem;
+}
 .social-app-main > .form-message,
 .call-conflict-action {
   position: absolute;
@@ -711,33 +732,168 @@
   align-items: center;
   gap: 0.35rem;
 }
-.ephemeral-call-banner {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.55rem clamp(0.8rem, 2.5vw, 2rem);
+.ephemeral-call-stage {
+  position: relative;
+  min-height: 0;
   border-bottom: 1px solid var(--border-default);
   background: var(--surface-deep);
 }
-.ephemeral-call-banner > div {
-  display: grid;
-  min-width: 0;
-  flex: 1;
-}
-.ephemeral-call-banner strong {
-  font-size: 0.8rem;
-}
-.ephemeral-call-banner span {
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font-size: 0.72rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ephemeral-call-banner .button {
+.ephemeral-call-ignore {
+  position: absolute;
+  top: 0.6rem;
+  right: 5.8rem;
   min-height: 2rem;
   padding: 0.3rem 0.65rem;
   font-size: 0.72rem;
+}
+.call-stage {
+  min-width: 0;
+  background: var(--surface-deep);
+}
+.call-stage.is-full {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--surface-main);
+}
+.call-stage.is-full .call-stage-header {
+  display: none;
+}
+.call-stage-header {
+  display: flex;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: 0.65rem;
+  justify-content: space-between;
+  padding: 0.55rem clamp(0.8rem, 2.5vw, 1.5rem);
+  border-bottom: 1px solid var(--border-default);
+}
+.call-stage-summary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+.call-stage-summary:disabled {
+  cursor: default;
+}
+.call-stage-summary > svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: 0 0 auto;
+  color: var(--accent-hover);
+}
+.call-stage-summary > span {
+  display: grid;
+  min-width: 0;
+}
+.call-stage-summary strong,
+.call-stage-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-stage-summary strong {
+  font-size: 0.82rem;
+}
+.call-stage-summary small {
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+}
+.call-stage-content {
+  min-height: 0;
+  overflow: auto;
+  padding: clamp(0.75rem, 2vw, 1.25rem);
+}
+.call-stage.is-compact .call-stage-content {
+  max-height: min(22rem, 42dvh);
+  padding-top: 0.65rem;
+}
+.call-stage.is-compact.is-audio-only .call-stage-content {
+  padding-block: 0.6rem;
+}
+.call-participant-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.55rem;
+}
+.call-stage.is-full .call-participant-grid {
+  width: min(100%, 64rem);
+  align-content: center;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  margin: auto;
+}
+.call-participant-tile {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  gap: 0.25rem;
+  padding: 0.7rem 0.55rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-sidebar);
+  text-align: center;
+  transition: border-color 180ms ease;
+}
+.call-participant-tile.is-speaking {
+  border-color: var(--accent);
+}
+.call-participant-avatar {
+  position: relative;
+}
+.call-participant-tile .avatar {
+  width: 3.25rem;
+  height: 3.25rem;
+  font-size: 1.15rem;
+}
+.call-participant-tile strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-participant-tile small {
+  color: var(--text-tertiary);
+  font-size: 0.65rem;
+}
+.speaking-indicator {
+  position: absolute;
+  right: -0.15rem;
+  bottom: -0.1rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 2px solid var(--surface-sidebar);
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.speaking-indicator.is-speaking {
+  background: var(--accent-hover);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.call-stage-empty {
+  margin: 0;
+  padding: 1rem;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+  text-align: center;
+}
+.call-stage-controls {
+  display: flex;
+  min-height: 3.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1rem;
+  border-top: 1px solid var(--border-default);
+  background: var(--surface-deep);
 }
 .message-list {
   min-height: 0;
@@ -916,26 +1072,16 @@
   border: 1px solid var(--border-default);
   background: var(--surface-deep);
 }
-.global-call-bar > div {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
 .global-call-bar span {
   color: var(--text-tertiary);
   font-size: 0.7rem;
 }
-.global-call-stage {
-  position: absolute;
-  z-index: 9;
-  right: 1rem;
-  bottom: 1rem;
-  width: min(26rem, calc(100% - 2rem));
-  max-height: 18rem;
-  overflow: auto;
-  padding: 0.5rem;
-  border: 1px solid var(--border-default);
-  background: var(--surface-deep);
+.global-call-summary {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  color: var(--text-primary);
+  text-align: left;
 }
 .modal-backdrop {
   position: fixed;
@@ -1417,11 +1563,29 @@
   .chat-header-actions .button.ghost {
     display: none;
   }
-  .ephemeral-call-banner {
-    flex-wrap: wrap;
+  .call-stage-header {
+    align-items: stretch;
+    flex-direction: column;
   }
-  .ephemeral-call-banner > div {
-    flex-basis: 100%;
+  .call-stage-header > .button {
+    align-self: flex-start;
+  }
+  .ephemeral-call-ignore {
+    position: static;
+    margin: 0 0.8rem 0.65rem;
+  }
+  .call-view-chat-button {
+    padding-inline: 0.45rem;
+    font-size: 0.68rem;
+  }
+  .call-stage-controls {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+  .call-stage-controls .icon-button {
+    width: 2.75rem;
+    height: 2.75rem;
+    flex: 0 0 2.75rem;
   }
   .message-composer {
     padding-bottom: 0.75rem;
@@ -1431,9 +1595,6 @@
   }
   .global-call-bar {
     display: none;
-  }
-  .global-call-stage {
-    bottom: 4.5rem;
   }
   .social-row {
     grid-template-columns: auto minmax(0, 1fr);

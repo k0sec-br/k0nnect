@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type ReactNode,
 } from 'react';
 
 import type {
@@ -41,7 +42,8 @@ interface ChatViewProps {
   subscribeChat(conversationId: string | null, listener: () => void): () => void;
   canJoinCall: boolean;
   callActive: boolean;
-  callParticipants: SocialUserView[];
+  callAvailable: boolean;
+  callStage: ReactNode;
   canSend: boolean;
   friends: FriendView[];
   onOpenChannels(): void;
@@ -196,8 +198,8 @@ export function ChatView(props: ChatViewProps) {
   }, [editingMessageId]);
 
   useEffect(() => {
-    if (props.callParticipants.length === 0) setIgnoredCallRoomId(null);
-  }, [props.callParticipants.length]);
+    if (!props.callAvailable) setIgnoredCallRoomId(null);
+  }, [props.callAvailable]);
 
   async function loadOlder() {
     if (!conversationId || loadingOlder) return;
@@ -329,32 +331,20 @@ export function ChatView(props: ChatViewProps) {
         </button>
       </header>
       {privateCallAvailable &&
-        !props.callActive &&
-        props.callParticipants.length > 0 &&
+        props.callStage &&
         ignoredCallRoomId !== props.conversation?.callRoomId && (
-          <section className="ephemeral-call-banner" aria-label="Chamada em andamento">
-            <div>
-              <strong>Chamada em andamento</strong>
-              <span>
-                {props.callParticipants.map((participant) => participant.displayName).join(', ')}
-              </span>
-            </div>
-            <button
-              className="button primary"
-              type="button"
-              disabled={!props.canJoinCall}
-              onClick={props.onUseGroupCall}
-            >
-              Entrar
-            </button>
-            <button
-              className="button ghost"
-              type="button"
-              onClick={() => setIgnoredCallRoomId(props.conversation?.callRoomId ?? null)}
-            >
-              Ignorar
-            </button>
-          </section>
+          <div className="ephemeral-call-stage">
+            {props.callStage}
+            {!props.callActive && (
+              <button
+                className="button ghost ephemeral-call-ignore"
+                type="button"
+                onClick={() => setIgnoredCallRoomId(props.conversation?.callRoomId ?? null)}
+              >
+                Ignorar
+              </button>
+            )}
+          </div>
         )}
       <div
         className="message-list"

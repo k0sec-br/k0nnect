@@ -72,6 +72,7 @@ interface AppShellProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationSummary | null;
   navigationContext: 'group' | 'home';
+  activeView: 'call' | 'chat';
   voice: VoiceControls;
   showCallPanel: boolean;
   channelsOpen: boolean;
@@ -82,6 +83,7 @@ interface AppShellProps {
   onHomeSelect(): void;
   onHomeConversationSelect(conversationId: string): void;
   onGroupConversationSelect(conversationId: string): void;
+  onTextChannelActivate(): void;
   onCreateGroup(): void;
   onVoiceChannelActivate(): void;
   onDismissCallPanel(): void;
@@ -266,6 +268,8 @@ function ChannelSidebar({
   onHomeSelect,
   onHomeConversationSelect,
   onVoiceChannelActivate,
+  onTextChannelActivate,
+  activeView,
 }: Pick<
   AppShellProps,
   | 'roomName'
@@ -282,6 +286,8 @@ function ChannelSidebar({
   | 'onHomeSelect'
   | 'onHomeConversationSelect'
   | 'onVoiceChannelActivate'
+  | 'onTextChannelActivate'
+  | 'activeView'
 > & {
   open: boolean;
   onClose(): void;
@@ -333,7 +339,12 @@ function ChannelSidebar({
             <div className="channel-category">
               <span>Texto</span>
             </div>
-            <button className="voice-channel is-active" type="button">
+            <button
+              className={`voice-channel ${activeView === 'chat' ? 'is-active' : ''}`}
+              type="button"
+              aria-current={activeView === 'chat' ? 'page' : undefined}
+              onClick={onTextChannelActivate}
+            >
               <span aria-hidden="true">#</span>
               <span>chat</span>
             </button>
@@ -343,8 +354,9 @@ function ChannelSidebar({
                   <span>Voz</span>
                 </div>
                 <button
-                  className={`voice-channel voice-channel-call ${voice.status !== 'idle' ? 'is-active' : ''}`}
+                  className={`voice-channel voice-channel-call ${activeView === 'call' ? 'is-active' : ''}`}
                   type="button"
+                  aria-current={activeView === 'call' ? 'page' : undefined}
                   onClick={onVoiceChannelActivate}
                   disabled={voice.status === 'idle' && !voice.canJoin}
                 >
@@ -520,6 +532,8 @@ export function AppShell(props: AppShellProps) {
         onHomeSelect={props.onHomeSelect}
         onHomeConversationSelect={props.onHomeConversationSelect}
         onVoiceChannelActivate={props.onVoiceChannelActivate}
+        onTextChannelActivate={props.onTextChannelActivate}
+        activeView={props.activeView}
       />
       <main className="app-main">{props.children}</main>
       <MemberSidebar
@@ -540,7 +554,7 @@ export function AppShell(props: AppShellProps) {
           }}
         />
       )}
-      {mobileLayout && props.showCallPanel && (
+      {mobileLayout && props.showCallPanel && props.activeView !== 'call' && (
         <div className="mobile-voice-bar" aria-label="Controles de voz">
           <>
             <IconButton

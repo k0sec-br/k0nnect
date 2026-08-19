@@ -8,6 +8,19 @@ const USER = {
   displayName: 'Alice',
   role: 'member',
 };
+const BOB = {
+  id: '22222222-2222-4222-8222-222222222222',
+  username: 'bob',
+  displayName: 'Bob',
+  role: 'member',
+};
+const CAROL = {
+  id: '33333333-3333-4333-8333-333333333333',
+  username: 'carol',
+  displayName: 'Carol',
+  role: 'member',
+};
+const DM_CALL_ROOM_ID = `dmcall_${'a'.repeat(57)}`;
 const RECOVERY_CODES = Array.from(
   { length: 10 },
   (_, index) => `AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-${String(index).padStart(4, '2A')}`,
@@ -248,6 +261,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
       static readonly OPEN = 1;
       static readonly CLOSED = 3;
       readyState = FakeWebSocket.CONNECTING;
+      activeChannelId: string | null = null;
       constructor(url: string) {
         super();
         FakeWebSocket.active = this;
@@ -268,18 +282,38 @@ async function installBrowserFakes(page: Page): Promise<void> {
                   connectionEpoch:
                     Number.isSafeInteger(requestedEpoch) && requestedEpoch > 0 ? requestedEpoch : 1,
                   resumed,
-                  onlineUserIds: ['11111111-1111-4111-8111-111111111111'],
-                  participants: resumed
-                    ? [
-                        {
-                          userId: '11111111-1111-4111-8111-111111111111',
-                          channelId: 'room_general',
-                          muted: false,
-                          deafened: false,
-                          speaking: false,
-                        },
-                      ]
-                    : [],
+                  onlineUserIds: [
+                    '11111111-1111-4111-8111-111111111111',
+                    '22222222-2222-4222-8222-222222222222',
+                    '33333333-3333-4333-8333-333333333333',
+                  ],
+                  participants: [
+                    ...(resumed
+                      ? [
+                          {
+                            userId: '11111111-1111-4111-8111-111111111111',
+                            channelId: 'room_general',
+                            muted: false,
+                            deafened: false,
+                            speaking: false,
+                          },
+                        ]
+                      : []),
+                    {
+                      userId: '22222222-2222-4222-8222-222222222222',
+                      channelId: 'room_private',
+                      muted: false,
+                      deafened: false,
+                      speaking: true,
+                    },
+                    {
+                      userId: '33333333-3333-4333-8333-333333333333',
+                      channelId: `dmcall_${'a'.repeat(57)}`,
+                      muted: true,
+                      deafened: false,
+                      speaking: false,
+                    },
+                  ],
                   publications: [],
                 },
               }),
@@ -293,6 +327,30 @@ async function installBrowserFakes(page: Page): Promise<void> {
           payload: { channelId?: string; requestId?: string };
         };
         if (message.type === 'call.join' || message.type === 'call.takeover') {
+          const channelId = message.payload.channelId ?? 'room_general';
+          this.activeChannelId = channelId;
+          const remoteParticipants =
+            channelId === 'room_private'
+              ? [
+                  {
+                    userId: '22222222-2222-4222-8222-222222222222',
+                    channelId,
+                    muted: false,
+                    deafened: false,
+                    speaking: true,
+                  },
+                ]
+              : channelId.startsWith('dmcall_')
+                ? [
+                    {
+                      userId: '33333333-3333-4333-8333-333333333333',
+                      channelId,
+                      muted: true,
+                      deafened: false,
+                      speaking: false,
+                    },
+                  ]
+                : [];
           this.dispatchEvent(
             new MessageEvent('message', {
               data: JSON.stringify({
@@ -300,15 +358,16 @@ async function installBrowserFakes(page: Page): Promise<void> {
                 type: 'call.joined',
                 payload: {
                   requestId: message.payload.requestId,
-                  channelId: message.payload.channelId,
+                  channelId,
                   participants: [
                     {
                       userId: '11111111-1111-4111-8111-111111111111',
-                      channelId: 'room_general',
+                      channelId,
                       muted: false,
                       deafened: false,
                       speaking: false,
                     },
+                    ...remoteParticipants,
                   ],
                   publications: [],
                 },
@@ -317,6 +376,8 @@ async function installBrowserFakes(page: Page): Promise<void> {
           );
         }
         if (message.type === 'call.leave') {
+          const channelId = this.activeChannelId ?? 'room_general';
+          this.activeChannelId = null;
           this.dispatchEvent(
             new MessageEvent('message', {
               data: JSON.stringify({
@@ -324,7 +385,7 @@ async function installBrowserFakes(page: Page): Promise<void> {
                 type: 'call.member.left',
                 payload: {
                   requestId: message.payload.requestId,
-                  channelId: 'room_general',
+                  channelId,
                   userId: '11111111-1111-4111-8111-111111111111',
                 },
               }),
@@ -373,8 +434,23 @@ async function mockApi(page: Page): Promise<{ create: number; publish: number }>
                 displayName: USER.displayName,
                 role: USER.role,
               },
+              BOB,
+              CAROL,
             ],
-            friends: [],
+            friends: [
+              {
+                id: BOB.id,
+                username: BOB.username,
+                displayName: BOB.displayName,
+                since: '2026-01-01',
+              },
+              {
+                id: CAROL.id,
+                username: CAROL.username,
+                displayName: CAROL.displayName,
+                since: '2026-01-01',
+              },
+            ],
             friendRequests: [],
             conversations: [
               {
@@ -386,6 +462,28 @@ async function mockApi(page: Page): Promise<{ create: number; publish: number }>
                 callRoomId: 'room_general',
                 isDefault: true,
                 members: [{ id: USER.id, username: USER.username, displayName: USER.displayName }],
+                lastMessage: null,
+              },
+              {
+                id: 'group_private',
+                kind: 'group',
+                spaceKind: 'group',
+                name: 'Cyber Study',
+                ownerUserId: USER.id,
+                callRoomId: 'room_private',
+                isDefault: false,
+                members: [USER, BOB],
+                lastMessage: null,
+              },
+              {
+                id: 'dm_alice_carol',
+                kind: 'dm',
+                spaceKind: null,
+                name: 'Alice / Carol',
+                ownerUserId: null,
+                callRoomId: DM_CALL_ROOM_ID,
+                isDefault: false,
+                members: [USER, CAROL],
                 lastMessage: null,
               },
             ],
@@ -501,7 +599,13 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(memberSidebar).toBeVisible();
   await memberSidebar.getByRole('button', { name: 'Ocultar membros' }).click();
 
-  for (const width of [1440, 1920]) {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Exibir membros' }).click();
+  await expect(memberSidebar).toBeVisible();
+  await memberSidebar.getByRole('button', { name: 'Ocultar membros' }).click();
+  await expect(memberSidebar).not.toBeVisible();
+
+  for (const width of [1366, 1440, 1920, 2560]) {
     await page.setViewportSize({ width, height: 900 });
     const expandedContentWidth = (await appMain.boundingBox())?.width ?? 0;
     await page.getByRole('button', { name: 'Exibir membros' }).click();
@@ -514,13 +618,56 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await page.setViewportSize({ width: 1280, height: 720 });
   await expect.poll(() => pageErrors).toEqual([]);
   await page.getByRole('button', { name: 'Geral' }).click();
-  await expect(page.getByRole('button', { name: 'Desativar microfone' })).toBeVisible();
-  await page.getByRole('button', { name: 'Ativar câmera' }).click();
-  await expect(page.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
-  await page.getByRole('button', { name: 'Compartilhar tela' }).click();
-  await expect(page.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
+  const callStage = page.getByRole('region', { name: 'K0Sec: Geral' });
+  await expect(page.getByRole('heading', { name: 'Geral', level: 1 })).toBeVisible();
+  await expect(callStage.getByRole('button', { name: 'Desativar microfone' })).toBeVisible();
+  await callStage.getByRole('button', { name: 'Ativar câmera' }).click();
+  await expect(callStage.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
+  await callStage.getByRole('button', { name: 'Compartilhar tela' }).click();
+  await expect(callStage.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
   expect(realtimeStats.create).toBe(1);
   expect(realtimeStats.publish).toBe(3);
+  const navigationMetricsBefore = await page.evaluate(() => {
+    const metrics = (
+      window as typeof window & {
+        __k0nnectDevelopmentMetrics: {
+          snapshot(): { httpRequests: number; wsMessagesSent: number; d1Reads: number };
+        };
+      }
+    ).__k0nnectDevelopmentMetrics.snapshot();
+    return {
+      httpRequests: metrics.httpRequests,
+      wsMessagesSent: metrics.wsMessagesSent,
+      d1Reads: metrics.d1Reads,
+    };
+  });
+
+  await page.getByRole('button', { name: 'Exibir membros' }).click();
+  await expect(memberSidebar).toBeVisible();
+  await page.getByRole('button', { name: 'Ocultar membros' }).first().click();
+  await expect(memberSidebar).not.toBeVisible();
+  await page.getByRole('button', { name: 'chat', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
+  expect(realtimeStats.create).toBe(1);
+  await page.getByRole('button', { name: 'Geral' }).click();
+  await expect(callStage).toBeVisible();
+  expect(realtimeStats.create).toBe(1);
+  expect(
+    await page.evaluate(() => {
+      const metrics = (
+        window as typeof window & {
+          __k0nnectDevelopmentMetrics: {
+            snapshot(): { httpRequests: number; wsMessagesSent: number; d1Reads: number };
+          };
+        }
+      ).__k0nnectDevelopmentMetrics.snapshot();
+      return {
+        httpRequests: metrics.httpRequests,
+        wsMessagesSent: metrics.wsMessagesSent,
+        d1Reads: metrics.d1Reads,
+      };
+    }),
+  ).toEqual(navigationMetricsBefore);
   await page.evaluate(() =>
     (
       window as typeof window & {
@@ -552,9 +699,9 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   );
   await expect.poll(() => realtimeStats.create).toBe(2);
   await expect.poll(() => realtimeStats.publish).toBe(6);
-  await expect(page.getByRole('button', { name: 'Desativar microfone' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
+  await expect(callStage.getByRole('button', { name: 'Desativar microfone' })).toBeVisible();
+  await expect(callStage.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
+  await expect(callStage.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   const cameraSwitchButton = page.getByRole('button', { name: 'Trocar câmera' });
@@ -591,8 +738,9 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   expect(realtimeStats.publish).toBe(6);
   await page.getByRole('link', { name: 'Voltar' }).click();
   await expect(page).toHaveURL(/\/app$/u);
-  await expect(page.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
+  await page.getByRole('button', { name: 'Abrir chamada ativa' }).click();
+  await expect(callStage.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
+  await expect(callStage.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
   await expect(page.getByLabel('Vídeo de Alice (você)')).not.toHaveClass(/is-mirrored/u);
   expect(realtimeStats.create).toBe(2);
   expect(realtimeStats.publish).toBe(6);
@@ -617,26 +765,58 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(page.getByRole('button', { name: 'Tela cheia' }).first()).toBeVisible();
   await page.waitForTimeout(100);
   expect(pageErrors).toEqual([]);
-  await page.getByRole('button', { name: 'Parar compartilhamento' }).click();
-  await page.getByRole('button', { name: 'Desativar câmera' }).click();
-  await page.getByRole('button', { name: 'Desativar microfone' }).click();
-  await expect(page.getByRole('button', { name: 'Ativar microfone' })).toHaveAttribute(
+  await callStage.getByRole('button', { name: 'Parar compartilhamento' }).click();
+  await callStage.getByRole('button', { name: 'Desativar câmera' }).click();
+  await callStage.getByRole('button', { name: 'Desativar microfone' }).click();
+  await expect(callStage.getByRole('button', { name: 'Ativar microfone' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await page.getByRole('button', { name: 'Desativar áudio' }).click();
-  await expect(page.getByRole('button', { name: 'Ativar áudio', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
-  await page.getByRole('button', { name: 'Ativar microfone ao reativar áudio' }).click();
-  await page.getByRole('button', { name: 'Ativar áudio', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Desativar microfone' })).toHaveAttribute(
+  await callStage.getByRole('button', { name: 'Desativar áudio' }).click();
+  await expect(
+    callStage.getByRole('button', { name: 'Ativar áudio', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await page
+    .getByRole('complementary', { name: 'Canais' })
+    .getByRole('button', {
+      name: 'Ativar microfone ao reativar áudio',
+    })
+    .click();
+  await callStage.getByRole('button', { name: 'Ativar áudio', exact: true }).click();
+  await expect(callStage.getByRole('button', { name: 'Desativar microfone' })).toHaveAttribute(
     'aria-pressed',
     'false',
   );
-  await page.getByRole('button', { name: 'Desconectar' }).click();
-  await expect(page.getByRole('heading', { name: 'Amigos', level: 1 })).toBeVisible();
+  await callStage.getByRole('button', { name: 'Sair da chamada' }).click();
+  await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Cyber Study' }).click();
+  await expect(page.getByRole('heading', { name: 'Cyber Study', level: 1 })).toBeVisible();
+  const groupCallStage = page.getByRole('region', { name: 'Cyber Study: Chamada do grupo' });
+  await expect(groupCallStage).toBeVisible();
+  await expect(groupCallStage.getByText('Bob')).toBeVisible();
+  await expect(groupCallStage.getByLabel('Falando')).toBeVisible();
+  const channelSidebar = page.getByRole('complementary', { name: 'Canais' });
+  await expect(channelSidebar.getByText('Voz', { exact: true })).toHaveCount(0);
+  await expect(channelSidebar.getByRole('button', { name: 'Geral' })).toHaveCount(0);
+  await groupCallStage.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page.getByRole('heading', { name: 'Chamada do grupo', level: 1 })).toBeVisible();
+  await expect(groupCallStage.getByRole('button', { name: 'Sair da chamada' })).toBeVisible();
+  await groupCallStage.getByRole('button', { name: 'Sair da chamada' }).click();
+  await expect(page.getByRole('heading', { name: 'Cyber Study', level: 1 })).toBeVisible();
+
+  await page.getByRole('button', { name: 'k0nnect' }).click();
+  await page.getByRole('button', { name: '@carol' }).click();
+  await expect(page.getByRole('heading', { name: '@carol', level: 1 })).toBeVisible();
+  const dmCallStage = page.getByRole('region', { name: '@carol: Chamada com @carol' });
+  await expect(dmCallStage).toBeVisible();
+  await expect(dmCallStage.getByText('Carol', { exact: true })).toBeVisible();
+  await dmCallStage.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page.getByRole('heading', { name: 'Chamada com @carol', level: 1 })).toBeVisible();
+  await dmCallStage.getByRole('button', { name: 'Sair da chamada' }).click();
+  await expect(page.getByRole('heading', { name: '@carol', level: 1 })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+
   await page.getByRole('button', { name: 'Sair da conta' }).click();
   await expect(page.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeVisible();
   expect(
