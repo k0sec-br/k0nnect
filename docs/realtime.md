@@ -4,7 +4,7 @@
 
 Cada servidor usa um Durable Object `ServerRealtime`. O endpoint `/api/servers/:serverId/socket` exige sessão válida, Origin exata, servidor conhecido e rate limit antes do upgrade. A identidade é derivada da sessão autenticada e nunca do payload do cliente.
 
-O protocolo versionado (`v: 4`) usa um WebSocket para presença e controle de call. `server.ready` entrega identidade da conexão e snapshot efêmero. Depois dele, eventos pequenos anunciam apenas deltas. Payloads são validados por Zod, limitados a 4 KiB e sujeitos a orçamento de 50 mensagens por 10 segundos.
+O protocolo versionado (`v: 5`) usa um WebSocket para presença, chat e controle de call. `server.ready` entrega identidade da conexão e snapshot efêmero. Depois dele, eventos pequenos anunciam apenas deltas. Payloads são validados por Zod, limitados a 4 KiB e sujeitos a orçamento de 50 mensagens por 10 segundos.
 
 O protocolo não usa heartbeat da aplicação, polling ou reenvio periódico de estado. A Hibernation API acompanha o lifecycle do transporte. `state.resync` permite solicitar um snapshot pelo mesmo socket quando o cliente precisa reconciliar presença, participantes e publicações.
 
@@ -51,6 +51,6 @@ Uma queda do socket pode preservar WebRTC e publicações durante o grace period
 
 Nenhum timer encerra mídia por `blur`, `visibilitychange` ou `unload`. Ao voltar de suspensão, eventos de rede e lifecycle solicitam reconciliação, mas não disparam polling.
 
-Em desenvolvimento, `MediaStatsCollector` lê `RTCPeerConnection.getStats()` localmente e `window.__k0nnectDevelopmentMetrics` expõe contadores de HTTP, operações Realtime estimadas, mensagens WS e reconnects. Esses dados não são enviados, persistidos nem habilitados em produção.
+Em desenvolvimento, `MediaStatsCollector` lê `RTCPeerConnection.getStats()` localmente e `window.__k0nnectDevelopmentMetrics` expõe contadores de HTTP, operações Realtime estimadas, mensagens WS, reconnects, operações D1 sociais estimadas e notificações internas observadas. Esses dados não são enviados, persistidos nem habilitados em produção.
 
 Localmente, `REALTIME_ENABLED=false` mantém o control plane disponível e impede mídia. Consulte [connection-lifecycle.md](connection-lifecycle.md) para as máquinas de estado e [manual-realtime-test.md](manual-realtime-test.md) para validação física.

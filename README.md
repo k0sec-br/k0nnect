@@ -1,19 +1,19 @@
 # k0nnect
 
-k0nnect é uma plataforma open source, privada e _invite-only_ para conversas por voz e vídeo em comunidades. A versão 0.2 entrega contas sem email, recuperação por códigos de uso único, presença em tempo real, câmera e compartilhamento de tela pelo Cloudflare Realtime SFU.
+k0nnect é uma plataforma open source, privada e _invite-only_ para conversas em comunidades. A versão 0.3 reúne amizades, mensagens diretas, grupos privados, chat persistente, chamadas, câmera e compartilhamento de tela.
 
-> Status: v0.2 em desenvolvimento. Faça uma revisão operacional e de segurança antes de hospedar para terceiros.
+> Status: v0.3 em desenvolvimento. Faça uma revisão operacional e de segurança antes de hospedar para terceiros.
 
 ## Stack e arquitetura
 
 - React 19, TypeScript estrito e Vite no navegador;
 - Hono em Cloudflare Workers para a API;
-- D1 para usuários, convites, sessões e metadados;
+- D1 para usuários, amizades, grupos, mensagens, convites e sessões;
 - Durable Objects com WebSocket Hibernation para presença e limitação de abuso;
 - Cloudflare Realtime SFU e TURN para o plano de mídia;
 - Vitest/Workers e Playwright para testes.
 
-O Worker e os Durable Objects formam o plano de controle; áudio e vídeo seguem entre o navegador e o Realtime SFU. Cada participante usa uma única sessão e uma única `RTCPeerConnection`. Veja [docs/architecture.md](docs/architecture.md).
+O Worker e os Durable Objects formam o plano de controle; áudio e vídeo seguem entre o navegador e o Realtime SFU. Cada aba usa um WebSocket, e cada participante em chamada usa uma única sessão e uma única `RTCPeerConnection`. Veja [docs/architecture.md](docs/architecture.md), [docs/social.md](docs/social.md) e [docs/chat.md](docs/chat.md).
 
 ## Desenvolvimento local
 
@@ -78,7 +78,7 @@ O repositório não faz deploy de pull requests nem entrega secrets a forks.
 
 ## Privacidade e segurança
 
-k0nnect não possui analytics, tracking, email, telefone ou gravação. Armazena somente identidade escolhida pelo usuário, hashes de credenciais, sessões, role e metadados operacionais mínimos. Microfone, câmera, tela e áudio da tela são processados transitoriamente pelo Realtime e não são persistidos pela aplicação. Leia [PRIVACY.md](PRIVACY.md), [SECURITY.md](SECURITY.md) e [docs/threat-model.md](docs/threat-model.md).
+k0nnect não possui analytics, tracking, email, telefone ou gravação. Armazena identidade escolhida, relações sociais, grupos, mensagens de texto, hashes de credenciais, sessões, role e metadados operacionais mínimos. Microfone, câmera, tela e áudio da tela são processados transitoriamente pelo Realtime e não são persistidos pela aplicação. Leia [PRIVACY.md](PRIVACY.md), [SECURITY.md](SECURITY.md) e [docs/threat-model.md](docs/threat-model.md).
 
 ## Contribuição e licença
 

@@ -12,7 +12,7 @@ Inclua impacto, pré-condições, versão/commit afetado, reprodução mínima e
 
 ## Escopo de segurança
 
-Autenticação, recovery codes, convites, sessões, autorização, Durable Objects, WebSocket, integração Realtime e configuração de deploy estão no escopo. Segredos de conta Cloudflare, configuração incorreta de uma instalação de terceiros e vulnerabilidades já públicas sem impacto específico devem ser tratados pelo operador correspondente.
+Autenticação, recovery codes, convites, sessões, amizades, grupos, mensagens, autorização, Durable Objects, WebSocket, integração Realtime e configuração de deploy estão no escopo. Segredos de conta Cloudflare, configuração incorreta de uma instalação de terceiros e vulnerabilidades já públicas sem impacto específico devem ser tratados pelo operador correspondente.
 
 Controles implementados são descritos em [docs/security-controls.md](docs/security-controls.md); limites e riscos residuais estão em [docs/threat-model.md](docs/threat-model.md).
 

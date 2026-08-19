@@ -40,6 +40,15 @@ Revise `git status`, a branch e o dry-run antes da migration. Gere o primeiro ow
 
 ## Rollback e operação
 
-Workers podem voltar a uma versão anterior, mas migrations D1 devem ser compatíveis para trás ou possuir plano de correção aditivo. Faça backup antes de mudanças destrutivas. O cron diário remove somente dados expirados/revogados. Monitore erros agregados por request ID sem registrar credenciais ou mídia.
+Antes da migration social, exporte um backup para um diretório seguro fora do repositório:
+
+```bash
+pnpm exec wrangler d1 export k0nnect --remote --env production --output /caminho/seguro/k0nnect-before-social.sql
+pnpm db:migrate:remote
+```
+
+Valide no banco migrado a associação de todas as contas ativas ao `group_k0sec` antes de publicar o Worker. A migration social é aditiva, mas o rollback do schema exige restaurar o backup e descarta amizades, grupos e mensagens criados depois dele. Uma versão antiga do Worker não conhece autorização de grupos privados e não deve ser publicada sobre o schema social com dados reais. Prefira uma correção forward compatível.
+
+Workers podem voltar a uma versão compatível, e migrations D1 precisam de plano de correção aditivo. O cron diário remove somente dados expirados/revogados. Monitore erros agregados por request ID sem registrar credenciais, mensagens ou mídia.
 
 Antes de cada release, inspecione `dist/client` procurando valores reais dos secrets e padrões de token. Nomes de bindings podem aparecer no artefato Worker; valores não podem aparecer no bundle do navegador. Confirme também que o ambiente ou integração Git usado para produção exige revisão e não publica código de pull requests não confiáveis.

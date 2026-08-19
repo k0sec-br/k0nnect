@@ -15,6 +15,9 @@ Todas as mudanças relevantes serão documentadas neste arquivo, seguindo Keep a
 - Supervisor de conexão com state machine, recovery deduplicado e reconciliação após retomada.
 - Retomada autenticada de WebSocket com identidade lógica, epoch e grace period server-side.
 - Razões autoritativas para encerramento de mídia e diagnóstico local de lifecycle/recovery.
+- Amizades por username exato, solicitações pendentes e mensagens diretas criadas no primeiro envio.
+- Grupos privados de até 20 membros com chat, chamada, transferência de owner e remoção imediata de acesso.
+- Chat persistente de texto simples com cursor, idempotência, edição do remetente e exclusão lógica.
 
 ### Changed
 
@@ -23,5 +26,6 @@ Todas as mudanças relevantes serão documentadas neste arquivo, seguindo Keep a
 - Política de permissões libera microfone, câmera e captura de tela somente para a própria origem.
 - Troca de câmera é transacional, preserva a track anterior em falhas e mantém o microfone intacto.
 - Encerramento de tela remove a UI imediatamente, agrupa áudio/vídeo e preserva a chamada.
+- Protocolo realtime v5 compartilha um WebSocket entre presença, chat e controle de chamada.
 
 [Unreleased]: https://github.com/k0sec-br/k0nnect/compare/main...develop
