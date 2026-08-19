@@ -6,6 +6,12 @@ export async function resetDatabase(): Promise<void> {
     env.DB.prepare('DELETE FROM recovery_codes'),
     env.DB.prepare('DELETE FROM sessions'),
     env.DB.prepare('DELETE FROM invites'),
+    env.DB.prepare('DELETE FROM messages'),
+    env.DB.prepare('DELETE FROM friendships'),
+    env.DB.prepare("DELETE FROM conversation_members WHERE conversation_id <> 'group_k0sec'"),
+    env.DB.prepare("DELETE FROM conversations WHERE id <> 'group_k0sec'"),
+    env.DB.prepare("DELETE FROM rooms WHERE id <> 'room_general'"),
+    env.DB.prepare("DELETE FROM conversation_members WHERE conversation_id = 'group_k0sec'"),
     env.DB.prepare('DELETE FROM users'),
   ]);
 }
@@ -36,6 +42,13 @@ export async function seedInvite(options?: {
          600000, 1, 'owner', 'active', ?, ?, ?)`,
     )
       .bind(creatorId, now.toISOString(), now.toISOString(), now.toISOString())
+      .run();
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO conversation_members (
+         conversation_id, user_id, member_role, joined_at
+       ) VALUES ('group_k0sec', ?, 'member', ?)`,
+    )
+      .bind(creatorId, now.toISOString())
       .run();
   }
   await env.DB.prepare(

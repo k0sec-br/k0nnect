@@ -6,8 +6,9 @@ import {
   registerInviteSchema,
   usernameSchema,
 } from '../../shared/schemas/auth';
-import { clientRoomMessageSchema } from '../../shared/protocol/room';
+import { clientRoomMessageSchema, REALTIME_PROTOCOL_VERSION } from '../../shared/protocol/room';
 import { realtimeSessionRequestSchema } from '../../shared/schemas/realtime';
+import { groupCreateSchema } from '../../shared/schemas/social';
 
 describe('validação de entrada', () => {
   it('recusa controles e marcadores bidi em nomes de exibição', () => {
@@ -68,9 +69,59 @@ describe('validação de entrada', () => {
     expect(registration.success).toBe(false);
     expect(
       clientRoomMessageSchema.safeParse({
-        v: 4,
+        v: REALTIME_PROTOCOL_VERSION,
         type: 'member.updated',
         payload: { muted: false, deafened: false, userId: crypto.randomUUID() },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('valida chat como texto simples sem aceitar spoofing de remetente', () => {
+    const message = {
+      v: REALTIME_PROTOCOL_VERSION,
+      type: 'chat.send',
+      payload: {
+        conversationId: 'group_k0sec',
+        clientMessageId: crypto.randomUUID(),
+        content: '  <script>alert(1)</script>\ntexto  ',
+      },
+    };
+    const parsed = clientRoomMessageSchema.safeParse(message);
+    expect(parsed.success).toBe(true);
+    if (parsed.success && parsed.data.type === 'chat.send') {
+      expect(parsed.data.payload.content).toBe(message.payload.content);
+    }
+    expect(
+      clientRoomMessageSchema.safeParse({
+        ...message,
+        payload: { ...message.payload, senderId: crypto.randomUUID() },
+      }).success,
+    ).toBe(false);
+    expect(
+      clientRoomMessageSchema.safeParse({
+        ...message,
+        payload: { ...message.payload, content: ' \n ' },
+      }).success,
+    ).toBe(false);
+    expect(
+      clientRoomMessageSchema.safeParse({
+        ...message,
+        payload: { ...message.payload, content: 'a'.repeat(2_001) },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('limita grupos privados a 20 membros incluindo owner', () => {
+    expect(
+      groupCreateSchema.safeParse({
+        name: 'Grupo',
+        memberIds: Array.from({ length: 19 }, () => crypto.randomUUID()),
+      }).success,
+    ).toBe(true);
+    expect(
+      groupCreateSchema.safeParse({
+        name: 'Grupo',
+        memberIds: Array.from({ length: 20 }, () => crypto.randomUUID()),
       }).success,
     ).toBe(false);
   });

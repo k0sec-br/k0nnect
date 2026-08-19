@@ -30,6 +30,36 @@ function nextMessage(socket: WebSocket): Promise<ServerRoomMessage> {
   });
 }
 
+function nextMessageOfType(
+  socket: WebSocket,
+  type: ServerRoomMessage['type'],
+): Promise<ServerRoomMessage> {
+  return new Promise((resolve) => {
+    const listener = (event: MessageEvent) => {
+      const message = JSON.parse(String(event.data)) as ServerRoomMessage;
+      if (message.type !== type) return;
+      socket.removeEventListener('message', listener);
+      resolve(message);
+    };
+    socket.addEventListener('message', listener);
+  });
+}
+
+function nextChatMessageWithContent(
+  socket: WebSocket,
+  content: string,
+): Promise<ServerRoomMessage> {
+  return new Promise((resolve) => {
+    const listener = (event: MessageEvent) => {
+      const message = JSON.parse(String(event.data)) as ServerRoomMessage;
+      if (message.type !== 'chat.message' || message.payload.content !== content) return;
+      socket.removeEventListener('message', listener);
+      resolve(message);
+    };
+    socket.addEventListener('message', listener);
+  });
+}
+
 function nextClose(socket: WebSocket): Promise<CloseEvent> {
   return new Promise((resolve) => socket.addEventListener('close', resolve, { once: true }));
 }
@@ -222,6 +252,347 @@ describe('servidor em tempo real', () => {
     if (!session) throw new Error('Sessão ausente');
     await env.SERVER_REALTIME.getByName('k0sec').disconnectSession(session.id);
     expect((await closed).code).toBe(4003);
+  });
+
+  it('persiste e entrega mensagem canônica uma única vez sob retry idempotente', async () => {
+    const alice = await connect(await createAccount('alice', 'Alice'));
+    const bob = await connect(await createAccount('bob', 'Bob'));
+    const clientMessageId = crypto.randomUUID();
+    const aliceMessage = nextMessageOfType(alice.socket, 'chat.message');
+    const bobMessage = nextMessageOfType(bob.socket, 'chat.message');
+    const command = JSON.stringify({
+      v: REALTIME_PROTOCOL_VERSION,
+      type: 'chat.send',
+      payload: {
+        conversationId: 'group_k0sec',
+        clientMessageId,
+        content: 'Olá pelo realtime',
+      },
+    });
+    alice.socket.send(command);
+    const [canonicalForAlice, canonicalForBob] = await Promise.all([aliceMessage, bobMessage]);
+    expect(canonicalForAlice.type).toBe('chat.message');
+    expect(canonicalForBob).toEqual(canonicalForAlice);
+
+    const retry = nextMessageOfType(alice.socket, 'chat.message');
+    alice.socket.send(command);
+    expect(await retry).toEqual(canonicalForAlice);
+    expect(
+      await env.DB.prepare(
+        'SELECT COUNT(*) AS total FROM messages WHERE sender_id = ? AND client_message_id = ?',
+      )
+        .bind(alice.ready.payload.onlineUserIds[0], clientMessageId)
+        .first<{ total: number }>(),
+    ).toEqual({ total: 1 });
+    alice.socket.close(1000, 'Fim');
+    bob.socket.close(1000, 'Fim');
+  });
+
+  it('recusa DM de não amigo sem criar conversation', async () => {
+    const alice = await connect(await createAccount('alice', 'Alice'));
+    await createAccount('bob', 'Bob');
+    const bob = await env.DB.prepare("SELECT id FROM users WHERE username = 'bob'").first<{
+      id: string;
+    }>();
+    if (!bob) throw new Error('Bob ausente');
+    const error = nextMessageOfType(alice.socket, 'error');
+    alice.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.send',
+        payload: {
+          recipientUserId: bob.id,
+          clientMessageId: crypto.randomUUID(),
+          content: 'mensagem indevida',
+        },
+      }),
+    );
+    expect((await error).type).toBe('error');
+    expect(
+      await env.DB.prepare("SELECT COUNT(*) AS total FROM conversations WHERE kind = 'dm'").first<{
+        total: number;
+      }>(),
+    ).toEqual({ total: 0 });
+    alice.socket.close(1000, 'Fim');
+  });
+
+  it('cria uma única DM quando os dois amigos enviam a primeira mensagem', async () => {
+    const aliceCookie = await createAccount('alice', 'Alice');
+    const bobCookie = await createAccount('bob', 'Bob');
+    const users = await env.DB.prepare(
+      "SELECT id, username FROM users WHERE username IN ('alice', 'bob')",
+    ).all<{ id: string; username: string }>();
+    const userId = new Map(users.results.map((user) => [user.username, user.id]));
+    const aliceId = userId.get('alice');
+    const bobId = userId.get('bob');
+    if (!aliceId || !bobId) throw new Error('Usuários da DM ausentes');
+    const [lowId, highId] = [aliceId, bobId].sort();
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO friendships (
+         user_low_id, user_high_id, requested_by, status, created_at, responded_at
+       ) VALUES (?, ?, ?, 'accepted', ?, ?)`,
+    )
+      .bind(lowId, highId, aliceId, now, now)
+      .run();
+    const alice = await connect(aliceCookie);
+    const bob = await connect(bobCookie);
+    const aliceCanonical = nextChatMessageWithContent(alice.socket, 'Bob iniciou');
+    const bobCanonical = nextChatMessageWithContent(bob.socket, 'Alice iniciou');
+    alice.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.send',
+        payload: {
+          recipientUserId: bobId,
+          clientMessageId: crypto.randomUUID(),
+          content: 'Alice iniciou',
+        },
+      }),
+    );
+    bob.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.send',
+        payload: {
+          recipientUserId: aliceId,
+          clientMessageId: crypto.randomUUID(),
+          content: 'Bob iniciou',
+        },
+      }),
+    );
+    expect((await aliceCanonical).type).toBe('chat.message');
+    expect((await bobCanonical).type).toBe('chat.message');
+    expect(
+      await env.DB.prepare("SELECT COUNT(*) AS total FROM conversations WHERE kind = 'dm'").first<{
+        total: number;
+      }>(),
+    ).toEqual({ total: 1 });
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS total FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.kind = 'dm'",
+      ).first<{ total: number }>(),
+    ).toEqual({ total: 2 });
+    alice.socket.close(1000, 'Fim');
+    bob.socket.close(1000, 'Fim');
+  });
+
+  it('recusa DM quando a amizade termina antes da atualização da capacidade do socket', async () => {
+    const aliceCookie = await createAccount('alice', 'Alice');
+    await createAccount('bob', 'Bob');
+    const users = await env.DB.prepare(
+      "SELECT id, username FROM users WHERE username IN ('alice', 'bob')",
+    ).all<{ id: string; username: string }>();
+    const userId = new Map(users.results.map((user) => [user.username, user.id]));
+    const aliceId = userId.get('alice');
+    const bobId = userId.get('bob');
+    if (!aliceId || !bobId) throw new Error('Usuários da DM ausentes');
+    const [lowId, highId] = [aliceId, bobId].sort();
+    const now = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO friendships (
+           user_low_id, user_high_id, requested_by, status, created_at, responded_at
+         ) VALUES (?, ?, ?, 'accepted', ?, ?)`,
+      ).bind(lowId, highId, aliceId, now, now),
+      env.DB.prepare(
+        `INSERT INTO conversations (
+           id, kind, name, owner_user_id, dm_pair_key, call_room_id,
+           is_default, created_at, updated_at
+         ) VALUES ('dm_race', 'dm', NULL, NULL, ?, NULL, 0, ?, ?)`,
+      ).bind(`${lowId}:${highId}`, now, now),
+      env.DB.prepare(
+        "INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at) VALUES ('dm_race', ?, 'member', ?)",
+      ).bind(aliceId, now),
+      env.DB.prepare(
+        "INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at) VALUES ('dm_race', ?, 'member', ?)",
+      ).bind(bobId, now),
+    ]);
+    const alice = await connect(aliceCookie);
+    await env.DB.prepare('DELETE FROM friendships WHERE user_low_id = ? AND user_high_id = ?')
+      .bind(lowId, highId)
+      .run();
+
+    const error = nextMessageOfType(alice.socket, 'error');
+    alice.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.send',
+        payload: {
+          conversationId: 'dm_race',
+          clientMessageId: crypto.randomUUID(),
+          content: 'mensagem em corrida',
+        },
+      }),
+    );
+    expect((await error).type).toBe('error');
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS total FROM messages WHERE conversation_id = 'dm_race'",
+      ).first<{ total: number }>(),
+    ).toEqual({ total: 0 });
+    alice.socket.close(1000, 'Fim');
+  });
+
+  it('entrega chat privado somente a membros ativos', async () => {
+    const aliceCookie = await createAccount('alice', 'Alice');
+    const bobCookie = await createAccount('bob', 'Bob');
+    const charlieCookie = await createAccount('charlie', 'Charlie');
+    const users = await env.DB.prepare(
+      "SELECT id, username FROM users WHERE username IN ('alice', 'bob', 'charlie')",
+    ).all<{ id: string; username: string }>();
+    const userId = new Map(users.results.map((user) => [user.username, user.id]));
+    const aliceId = userId.get('alice');
+    const bobId = userId.get('bob');
+    if (!aliceId || !bobId) throw new Error('Usuários do grupo ausentes');
+    const now = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO rooms (id, slug, name, kind, position, created_at) VALUES ('call_private', 'private', 'Private', 'voice', 0, ?)",
+      ).bind(now),
+      env.DB.prepare(
+        `INSERT INTO conversations (
+           id, kind, name, owner_user_id, call_room_id, is_default, created_at, updated_at
+         ) VALUES ('group_private', 'group', 'Private', ?, 'call_private', 0, ?, ?)`,
+      ).bind(aliceId, now, now),
+      env.DB.prepare(
+        "INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at) VALUES ('group_private', ?, 'owner', ?)",
+      ).bind(aliceId, now),
+      env.DB.prepare(
+        "INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at) VALUES ('group_private', ?, 'member', ?)",
+      ).bind(bobId, now),
+    ]);
+    const alice = await connect(aliceCookie);
+    const bob = await connect(bobCookie);
+    const charlie = await connect(charlieCookie);
+    let charlieChatEvents = 0;
+    charlie.socket.addEventListener('message', (event) => {
+      const message = JSON.parse(String(event.data)) as ServerRoomMessage;
+      if (message.type === 'chat.message') charlieChatEvents += 1;
+    });
+    const receivedByBob = nextMessageOfType(bob.socket, 'chat.message');
+    alice.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.send',
+        payload: {
+          conversationId: 'group_private',
+          clientMessageId: crypto.randomUUID(),
+          content: 'somente membros',
+        },
+      }),
+    );
+    expect((await receivedByBob).type).toBe('chat.message');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(charlieChatEvents).toBe(0);
+    const denied = nextMessageOfType(charlie.socket, 'error');
+    charlie.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.send',
+        payload: {
+          conversationId: 'group_private',
+          clientMessageId: crypto.randomUUID(),
+          content: 'tentativa externa',
+        },
+      }),
+    );
+    expect((await denied).type).toBe('error');
+    alice.socket.close(1000, 'Fim');
+    bob.socket.close(1000, 'Fim');
+    charlie.socket.close(1000, 'Fim');
+  });
+
+  it('revoga chat, fanout e call imediatamente após remover um membro', async () => {
+    const aliceCookie = await createAccount('alice', 'Alice');
+    const bobCookie = await createAccount('bob', 'Bob');
+    const users = await env.DB.prepare(
+      "SELECT id, username FROM users WHERE username IN ('alice', 'bob')",
+    ).all<{ id: string; username: string }>();
+    const userId = new Map(users.results.map((user) => [user.username, user.id]));
+    const aliceId = userId.get('alice');
+    const bobId = userId.get('bob');
+    if (!aliceId || !bobId) throw new Error('Usuários do grupo ausentes');
+    const now = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO rooms (id, slug, name, kind, position, created_at) VALUES ('call_removed', 'removed', 'Removed', 'voice', 0, ?)",
+      ).bind(now),
+      env.DB.prepare(
+        `INSERT INTO conversations (
+           id, kind, name, owner_user_id, call_room_id, is_default, created_at, updated_at
+         ) VALUES ('group_removed', 'group', 'Removed', ?, 'call_removed', 0, ?, ?)`,
+      ).bind(aliceId, now, now),
+      env.DB.prepare(
+        "INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at) VALUES ('group_removed', ?, 'owner', ?)",
+      ).bind(aliceId, now),
+      env.DB.prepare(
+        "INSERT INTO conversation_members (conversation_id, user_id, member_role, joined_at) VALUES ('group_removed', ?, 'member', ?)",
+      ).bind(bobId, now),
+    ]);
+    const alice = await connect(aliceCookie);
+    const bob = await connect(bobCookie);
+    await env.DB.prepare(
+      "UPDATE conversation_members SET removed_at = ? WHERE conversation_id = 'group_removed' AND user_id = ?",
+    )
+      .bind(new Date().toISOString(), bobId)
+      .run();
+    const socialChanged = nextMessageOfType(bob.socket, 'social.changed');
+    await env.SERVER_REALTIME.getByName('k0sec').refreshSocialState([bobId], 'groups');
+    expect((await socialChanged).type).toBe('social.changed');
+
+    let removedMemberMessages = 0;
+    bob.socket.addEventListener('message', (event) => {
+      const message = JSON.parse(String(event.data)) as ServerRoomMessage;
+      if (message.type === 'chat.message') removedMemberMessages += 1;
+    });
+    const deliveredToAlice = nextMessageOfType(alice.socket, 'chat.message');
+    alice.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.send',
+        payload: {
+          conversationId: 'group_removed',
+          clientMessageId: crypto.randomUUID(),
+          content: 'somente Alice',
+        },
+      }),
+    );
+    expect((await deliveredToAlice).type).toBe('chat.message');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(removedMemberMessages).toBe(0);
+
+    const sendError = nextMessageOfType(bob.socket, 'error');
+    bob.socket.send(
+      JSON.stringify({
+        v: REALTIME_PROTOCOL_VERSION,
+        type: 'chat.send',
+        payload: {
+          conversationId: 'group_removed',
+          clientMessageId: crypto.randomUUID(),
+          content: 'bloqueada',
+        },
+      }),
+    );
+    expect((await sendError).type).toBe('error');
+    expect((await join(bob.socket, 'call_removed')).type).toBe('error');
+    alice.socket.close(1000, 'Fim');
+    bob.socket.close(1000, 'Fim');
+  });
+
+  it('entrega atualização social a todas as conexões ativas da conta', async () => {
+    const cookie = await createAccount('alice', 'Alice');
+    const first = await connect(cookie);
+    const second = await connect(cookie);
+    const userId = first.ready.payload.onlineUserIds[0];
+    if (!userId) throw new Error('Usuário conectado ausente');
+    const firstUpdate = nextMessageOfType(first.socket, 'social.changed');
+    const secondUpdate = nextMessageOfType(second.socket, 'social.changed');
+    await env.SERVER_REALTIME.getByName('k0sec').refreshSocialState([userId], 'friends');
+    expect((await firstUpdate).type).toBe('social.changed');
+    expect((await secondUpdate).type).toBe('social.changed');
+    first.socket.close(1000, 'Fim');
+    second.socket.close(1000, 'Fim');
   });
 
   it('retoma a conexão lógica depois da rotação autenticada da sessão', async () => {
