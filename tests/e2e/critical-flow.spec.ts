@@ -881,6 +881,24 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await groupCallStage.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Cyber Study', level: 1 })).toBeVisible();
   await expect(groupCallStage.getByRole('button', { name: 'Conectado' })).toBeDisabled();
+  await channelSidebar.getByRole('button', { name: 'Ativar câmera' }).click();
+  await channelSidebar.getByRole('button', { name: 'Compartilhar tela' }).click();
+  const compactCameraTile = groupCallStage.locator(
+    '.call-participant-tile.has-inline-media:not(.is-screen-share)',
+  );
+  const compactScreenTile = groupCallStage.locator('.screen-share-available');
+  await expect(compactCameraTile).toBeVisible();
+  await expect(compactScreenTile).toBeVisible();
+  const compactCameraBounds = await compactCameraTile.boundingBox();
+  const compactScreenBounds = await compactScreenTile.boundingBox();
+  if (!compactCameraBounds || !compactScreenBounds) {
+    throw new Error('Tiles de mídia compactos não mensuráveis.');
+  }
+  expect(Math.abs(compactCameraBounds.width - compactScreenBounds.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(compactCameraBounds.height - compactScreenBounds.height)).toBeLessThanOrEqual(1);
+  expect(compactCameraBounds.width).toBeLessThanOrEqual(256);
+  await channelSidebar.getByRole('button', { name: 'Parar compartilhamento' }).click();
+  await channelSidebar.getByRole('button', { name: 'Desativar câmera' }).click();
   await channelSidebar.getByRole('button', { name: 'Desconectar' }).click();
 
   await page.getByRole('button', { name: 'k0nnect' }).click();
