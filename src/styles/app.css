@@ -814,12 +814,24 @@
   padding: clamp(0.75rem, 2vw, 1.25rem);
 }
 .call-stage.is-compact .call-stage-content {
-  max-height: min(16rem, 34dvh);
-  padding-top: 0.65rem;
+  max-height: 10rem;
+  padding: 0.65rem clamp(0.8rem, 2.5vw, 1.5rem);
 }
 .call-stage.is-compact .call-participant-grid {
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 12rem));
-  justify-content: start;
+  display: flex;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
+}
+.call-stage.is-compact .call-participant-tile {
+  width: 9rem;
+  min-height: 6.75rem;
+  flex: 0 0 9rem;
+  padding: 0.5rem;
+}
+.call-stage.is-compact .call-participant-tile .avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 0.9rem;
 }
 .call-stage.is-compact.is-audio-only .call-stage-content {
   padding-block: 0.6rem;
@@ -1071,21 +1083,16 @@
   display: grid;
   width: clamp(18rem, 30vw, 32rem);
   min-width: 18rem;
-  max-width: min(56rem, calc(100vw - 1rem));
-  height: clamp(12rem, 28vh, 22rem);
-  min-height: 12rem;
-  max-height: min(70dvh, 42rem);
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  resize: both;
+  resize: horizontal;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-panel);
   background: var(--surface-deep);
-  box-shadow: 0 0.8rem 2.2rem rgb(0 0 0 / 38%);
+  box-shadow: 0 0.65rem 1.6rem rgb(0 0 0 / 28%);
 }
 .floating-media-dock.is-expanded {
   width: min(56rem, calc(100vw - 2rem));
-  height: min(68dvh, 42rem);
 }
 .floating-media-header {
   display: flex;
@@ -1132,9 +1139,12 @@
   font-size: 0.65rem;
 }
 .floating-media-content {
+  width: 100%;
   min-height: 0;
+  aspect-ratio: var(--media-aspect-ratio, 16 / 9);
   overflow: hidden;
   padding: 0.5rem;
+  background: #050607;
 }
 .floating-media-content > p {
   display: grid;
@@ -1152,6 +1162,16 @@
   grid-auto-rows: minmax(0, 1fr);
   align-content: stretch;
   overflow: hidden;
+}
+.floating-media-focus {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.floating-media-focus .media-tile {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 .floating-media-grid .media-tile {
   width: 100%;
@@ -1675,9 +1695,7 @@
     width: calc(100vw - 1rem);
     min-width: 0;
     max-width: calc(100vw - 1rem);
-    height: min(42dvh, 22rem);
-    min-height: 11rem;
-    resize: vertical;
+    resize: none;
   }
   .social-row {
     grid-template-columns: auto minmax(0, 1fr);

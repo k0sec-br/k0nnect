@@ -639,6 +639,16 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
   await expect(mediaDock.getByLabel('Tela de Alice (você)')).toHaveCSS('object-fit', 'contain');
   expect((await mediaDock.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(640);
+  const dockContent = mediaDock.locator('.floating-media-content');
+  const gridContentBounds = await dockContent.boundingBox();
+  expect((gridContentBounds?.width ?? 0) / (gridContentBounds?.height ?? 1)).toBeCloseTo(16 / 9, 1);
+  await mediaDock.getByRole('button', { name: 'Focar transmissão' }).click();
+  await expect(mediaDock.getByRole('button', { name: 'Exibir em grade' })).toBeVisible();
+  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
+  await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toHaveCount(0);
+  await mediaDock.getByRole('button', { name: 'Exibir em grade' }).click();
+  await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toBeVisible();
+  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
   await mediaDock.getByRole('button', { name: 'Ampliar transmissões' }).click();
   await expect(mediaDock.getByRole('button', { name: 'Reduzir transmissões' })).toBeVisible();
   expect((await mediaDock.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(

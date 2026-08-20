@@ -1,9 +1,16 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 
 import type { RoomParticipant } from '../../shared/protocol/room';
 import type { MediaStreamView } from '../features/voice/use-voice-session';
+import { mediaTrackAspectRatio } from '../features/voice/video-layout';
 import { IconButton } from './icon-button';
-import { CloseIcon, MaximizeIcon, MinimizeIcon } from './icons';
+import { CloseIcon, GridIcon, MaximizeIcon, MinimizeIcon } from './icons';
 import { MediaRoomView } from './media-room-view';
 
 interface DragState {
@@ -34,8 +41,50 @@ export function FloatingMediaDock({
   const dockRef = useRef<HTMLElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [viewMode, setViewMode] = useState<'focus' | 'grid'>('grid');
+  const [focusedPublicationId, setFocusedPublicationId] = useState<string | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
-  const hasMedia = localMedia.length + remoteMedia.length > 0;
+  const [viewport, setViewport] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  const videoMedia = [...localMedia, ...remoteMedia].filter(
+    (media) => media.publication.kind === 'video',
+  );
+  const hasMedia = videoMedia.length > 0;
+  const effectiveViewMode = videoMedia.length > 1 ? viewMode : 'focus';
+  const focusedMedia =
+    videoMedia.find((media) => media.publication.publicationId === focusedPublicationId) ??
+    videoMedia.at(-1);
+  const mediaAspectRatio =
+    effectiveViewMode === 'focus'
+      ? (mediaTrackAspectRatio(focusedMedia?.stream.getVideoTracks()[0]) ?? 16 / 9)
+      : 16 / 9;
+  const maximumDockWidth = Math.max(
+    160,
+    Math.min(896, viewport.width - 16, (viewport.height - 80) * mediaAspectRatio),
+  );
+  const minimumDockWidth = Math.min(288, maximumDockWidth);
+  const dockStyle = {
+    '--media-aspect-ratio': String(mediaAspectRatio),
+    minWidth: minimumDockWidth,
+    maxWidth: maximumDockWidth,
+    ...(position ? { right: 'auto', bottom: 'auto', left: position.left, top: position.top } : {}),
+  } as CSSProperties;
+
+  useEffect(() => {
+    if (videoMedia.some((media) => media.publication.publicationId === focusedPublicationId)) {
+      return;
+    }
+    setFocusedPublicationId(videoMedia.at(-1)?.publication.publicationId ?? null);
+  }, [focusedPublicationId, videoMedia]);
+
+  useEffect(() => {
+    const updateViewport = () =>
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
 
   function startDragging(event: ReactPointerEvent<HTMLElement>) {
     if ((event.target as HTMLElement).closest('button')) return;
@@ -76,11 +125,7 @@ export function FloatingMediaDock({
     <section
       ref={dockRef}
       className={`floating-media-dock ${expanded ? 'is-expanded' : ''}`}
-      style={
-        position
-          ? { right: 'auto', bottom: 'auto', left: position.left, top: position.top }
-          : undefined
-      }
+      style={dockStyle}
       aria-label={`Transmissões de ${title}`}
     >
       <header
@@ -104,6 +149,26 @@ export function FloatingMediaDock({
               Voltar à conversa
             </button>
           )}
+          {videoMedia.length > 1 && (
+            <IconButton
+              label={effectiveViewMode === 'focus' ? 'Exibir em grade' : 'Focar transmissão'}
+              aria-pressed={effectiveViewMode === 'focus'}
+              onClick={() => {
+                if (effectiveViewMode === 'focus') {
+                  setViewMode('grid');
+                  return;
+                }
+                setFocusedPublicationId(videoMedia.at(-1)?.publication.publicationId ?? null);
+                setViewMode('focus');
+              }}
+            >
+              {effectiveViewMode === 'focus' ? (
+                <GridIcon aria-hidden="true" />
+              ) : (
+                <MaximizeIcon aria-hidden="true" />
+              )}
+            </IconButton>
+          )}
           <IconButton
             label={expanded ? 'Reduzir transmissões' : 'Ampliar transmissões'}
             aria-pressed={expanded}
@@ -123,7 +188,12 @@ export function FloatingMediaDock({
             userId={userId}
             localMedia={localMedia}
             remoteMedia={remoteMedia}
-            layout="grid"
+            layout={effectiveViewMode}
+            focusedPublicationId={focusedPublicationId}
+            onFocusPublication={(publicationId) => {
+              setFocusedPublicationId(publicationId);
+              setViewMode('focus');
+            }}
           />
         ) : (
           <p>Preparando transmissão…</p>

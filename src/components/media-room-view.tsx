@@ -95,12 +95,16 @@ export function MediaRoomView({
   localMedia,
   remoteMedia,
   layout = 'stage',
+  focusedPublicationId,
+  onFocusPublication,
 }: {
   participants: RoomParticipant[];
   userId: string;
   localMedia: MediaStreamView[];
   remoteMedia: MediaStreamView[];
-  layout?: 'grid' | 'stage';
+  layout?: 'focus' | 'grid' | 'stage';
+  focusedPublicationId?: string | null;
+  onFocusPublication?(publicationId: string): void;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const media = useMemo<DisplayMedia[]>(
@@ -129,6 +133,17 @@ export function MediaRoomView({
     setScreenAspectRatio(mediaTrackAspectRatio(selected?.stream.getVideoTracks()[0]) ?? 16 / 9);
   }, [screenMedia, selectedScreenId]);
 
+  if (layout === 'focus') {
+    const focusedMedia =
+      videoMedia.find((item) => item.publication.publicationId === focusedPublicationId) ??
+      videoMedia[0];
+    return focusedMedia ? (
+      <section className="floating-media-focus" aria-label="Transmissão em foco">
+        <VideoTile media={focusedMedia} participants={participants} userId={userId} fitContainer />
+      </section>
+    ) : null;
+  }
+
   if (layout === 'grid') {
     return (
       <section className="camera-grid floating-media-grid" aria-label="Transmissões assistidas">
@@ -139,6 +154,11 @@ export function MediaRoomView({
             participants={participants}
             userId={userId}
             fitContainer
+            {...(videoMedia.length > 1 && onFocusPublication
+              ? {
+                  onSelect: () => onFocusPublication(item.publication.publicationId),
+                }
+              : {})}
           />
         ))}
       </section>
