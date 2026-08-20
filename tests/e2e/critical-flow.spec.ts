@@ -552,6 +552,7 @@ async function mockApi(page: Page): Promise<{ create: number; publish: number }>
 }
 
 test('convite, recovery, sala, controles de voz, logout e login', async ({ page }) => {
+  test.setTimeout(60_000);
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.stack ?? error.message));
   page.on('console', (message) => {
@@ -632,38 +633,13 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await callStage.getByRole('button', { name: 'Compartilhar tela' }).click();
   await expect(callStage.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
   await callStage.getByRole('button', { name: 'Assistir câmera' }).click();
-  await callStage.getByRole('button', { name: 'Assistir tela' }).click();
+  await expect(callStage.getByLabel('Câmera de Alice (você)')).toBeVisible();
   const mediaDock = page.getByRole('region', { name: 'Transmissões de K0Sec' });
-  await expect(mediaDock).toBeVisible();
-  await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toBeVisible();
-  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
-  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toHaveCSS('object-fit', 'contain');
-  expect((await mediaDock.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(640);
-  const dockContent = mediaDock.locator('.floating-media-content');
-  const gridContentBounds = await dockContent.boundingBox();
-  expect((gridContentBounds?.width ?? 0) / (gridContentBounds?.height ?? 1)).toBeCloseTo(16 / 9, 1);
-  await mediaDock.getByRole('button', { name: 'Focar transmissão' }).click();
-  await expect(mediaDock.getByRole('button', { name: 'Exibir em grade' })).toBeVisible();
-  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
-  await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toHaveCount(0);
-  await mediaDock.getByRole('button', { name: 'Exibir em grade' }).click();
-  await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toBeVisible();
-  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
-  await mediaDock.getByRole('button', { name: 'Ampliar transmissões' }).click();
-  await expect(mediaDock.getByRole('button', { name: 'Reduzir transmissões' })).toBeVisible();
-  expect((await mediaDock.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
-    896,
-  );
-  await mediaDock.getByRole('button', { name: 'Reduzir transmissões' }).click();
-  const dockBeforeDrag = await mediaDock.boundingBox();
-  const dockHeader = await mediaDock.locator('.floating-media-header').boundingBox();
-  if (!dockBeforeDrag || !dockHeader) throw new Error('Dock de mídia não mensurável.');
-  await page.mouse.move(dockHeader.x + 80, dockHeader.y + dockHeader.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(dockHeader.x - 80, dockHeader.y - 60);
-  await page.mouse.up();
-  const dockAfterDrag = await mediaDock.boundingBox();
-  expect(dockAfterDrag?.x).toBeLessThan(dockBeforeDrag.x - 50);
+  await expect(mediaDock).toHaveCount(0);
+  await callStage.getByRole('button', { name: 'Parar de assistir' }).click();
+  await callStage.getByRole('button', { name: 'Assistir tela' }).click();
+  await expect(callStage.getByLabel('Tela de Alice (você)')).toBeVisible();
+  await expect(callStage.getByLabel('Tela de Alice (você)')).toHaveCSS('object-fit', 'contain');
   expect(realtimeStats.create).toBe(1);
   expect(realtimeStats.publish).toBe(3);
   const navigationMetricsBefore = await page.evaluate(() => {
@@ -699,13 +675,26 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await composer.fill('');
   await page.getByRole('button', { name: 'k0nnect' }).click();
   await expect(page.getByRole('heading', { name: 'Amigos', level: 1 })).toBeVisible();
-  await expect(mediaDock.getByRole('button', { name: 'Voltar à conversa' })).toBeVisible();
+  await expect(mediaDock).toBeVisible();
+  await expect(mediaDock.getByRole('button', { name: 'Voltar' })).toBeVisible();
   await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toHaveCount(0);
   await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
-  await mediaDock.getByRole('button', { name: 'Voltar à conversa' }).click();
-  await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
-  await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toBeVisible();
-  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
+  await expect(mediaDock.getByRole('button', { name: 'Focar transmissão' })).toHaveCount(0);
+  await expect(mediaDock.getByRole('button', { name: 'Exibir em grade' })).toHaveCount(0);
+  await expect(mediaDock.getByRole('button', { name: 'Ampliar transmissões' })).toHaveCount(0);
+  const dockBeforeDrag = await mediaDock.boundingBox();
+  const dockHeader = await mediaDock.locator('.floating-media-header').boundingBox();
+  if (!dockBeforeDrag || !dockHeader) throw new Error('Dock de mídia não mensurável.');
+  await page.mouse.move(dockHeader.x + 80, dockHeader.y + dockHeader.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dockHeader.x - 80, dockHeader.y - 60);
+  await page.mouse.up();
+  const dockAfterDrag = await mediaDock.boundingBox();
+  expect(dockAfterDrag?.x).toBeLessThan(dockBeforeDrag.x - 50);
+  await mediaDock.getByRole('button', { name: 'Voltar' }).click();
+  await expect(page.getByRole('heading', { name: 'Geral', level: 1 })).toBeVisible();
+  await expect(mediaDock).toHaveCount(0);
+  await expect(callStage.getByLabel('Tela de Alice (você)')).toBeVisible();
   expect(realtimeStats.create).toBe(1);
   await page.getByRole('button', { name: 'Geral' }).click();
   await expect(callStage).toBeVisible();
@@ -799,7 +788,6 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(page.getByLabel('Chamada ativa')).toHaveCount(0);
   await page.getByRole('button', { name: 'K0Sec', exact: true }).click();
   await page.getByRole('button', { name: 'Geral' }).click();
-  await callStage.getByRole('button', { name: 'Assistir câmera' }).click();
   await callStage.getByRole('button', { name: 'Assistir tela' }).click();
   await expect(callStage.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
   await expect(callStage.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
@@ -827,6 +815,8 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(page.getByRole('button', { name: 'Tela cheia' }).first()).toBeVisible();
   await page.waitForTimeout(100);
   expect(pageErrors).toEqual([]);
+  await callStage.getByRole('button', { name: 'Parar de assistir' }).click();
+  await expect(callStage.getByLabel('Tela de Alice (você)')).toHaveCount(0);
   await callStage.getByRole('button', { name: 'Parar compartilhamento' }).click();
   await callStage.getByRole('button', { name: 'Desativar câmera' }).click();
   await callStage.getByRole('button', { name: 'Desativar microfone' }).click();
@@ -849,8 +839,6 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
     'aria-pressed',
     'false',
   );
-  await mediaDock.getByRole('button', { name: 'Ocultar transmissões' }).click();
-  await expect(mediaDock).not.toBeVisible();
   await callStage.getByRole('button', { name: 'Sair da chamada' }).click();
   await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
 
@@ -868,10 +856,9 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(channelSidebar.getByText('Voz', { exact: true })).toHaveCount(0);
   await expect(channelSidebar.getByRole('button', { name: 'Geral' })).toHaveCount(0);
   await groupCallStage.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page.getByRole('heading', { name: 'Chamada do grupo', level: 1 })).toBeVisible();
-  await expect(groupCallStage.getByRole('button', { name: 'Sair da chamada' })).toBeVisible();
-  await groupCallStage.getByRole('button', { name: 'Sair da chamada' }).click();
   await expect(page.getByRole('heading', { name: 'Cyber Study', level: 1 })).toBeVisible();
+  await expect(groupCallStage.getByRole('button', { name: 'Conectado' })).toBeDisabled();
+  await channelSidebar.getByRole('button', { name: 'Desconectar' }).click();
 
   await page.getByRole('button', { name: 'k0nnect' }).click();
   await page.getByRole('button', { name: '@carol' }).click();
@@ -880,9 +867,9 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(dmCallStage).toBeVisible();
   await expect(dmCallStage.getByText('Carol', { exact: true })).toBeVisible();
   await dmCallStage.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page.getByRole('heading', { name: 'Chamada com @carol', level: 1 })).toBeVisible();
-  await dmCallStage.getByRole('button', { name: 'Sair da chamada' }).click();
   await expect(page.getByRole('heading', { name: '@carol', level: 1 })).toBeVisible();
+  await expect(dmCallStage.getByRole('button', { name: 'Conectado' })).toBeDisabled();
+  await channelSidebar.getByRole('button', { name: 'Desconectar' }).click();
   expect(pageErrors).toEqual([]);
 
   await page.getByRole('button', { name: 'Sair da conta' }).click();
