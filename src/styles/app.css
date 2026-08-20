@@ -828,6 +828,13 @@
   flex: 0 0 9rem;
   padding: 0.5rem;
 }
+.call-stage.is-compact .call-participant-tile.has-inline-media {
+  width: clamp(18rem, 34vw, 28rem);
+  height: 8rem;
+  min-height: 8rem;
+  flex-basis: clamp(18rem, 34vw, 28rem);
+  padding: 0;
+}
 .call-stage.is-compact .call-participant-tile .avatar {
   width: 2.5rem;
   height: 2.5rem;
@@ -880,6 +887,62 @@
 .call-participant-tile small {
   color: var(--text-tertiary);
   font-size: 0.65rem;
+}
+.call-participant-tile.has-inline-media {
+  position: relative;
+  display: block;
+  min-height: min(22rem, 48vh);
+  overflow: hidden;
+  padding: 0;
+  background: #050607;
+}
+.call-participant-tile.has-inline-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.inline-media-label {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.45rem;
+  left: 0.5rem;
+  overflow: hidden;
+  padding: 0.3rem 0.45rem;
+  background: rgb(0 0 0 / 68%);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inline-media-actions {
+  position: absolute;
+  z-index: 2;
+  top: 0.4rem;
+  right: 0.4rem;
+  display: flex;
+  gap: 0.2rem;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.call-participant-tile.has-inline-media:hover .inline-media-actions,
+.call-participant-tile.has-inline-media:focus-within .inline-media-actions {
+  opacity: 1;
+}
+.inline-media-actions .icon-button {
+  background: rgb(5 6 7 / 82%);
+}
+.inline-media-pending {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+}
+.call-participant-tile.has-inline-media:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border: 0;
 }
 .speaking-indicator {
   position: absolute;
@@ -1090,9 +1153,6 @@
   border-radius: var(--radius-panel);
   background: var(--surface-deep);
   box-shadow: 0 0.65rem 1.6rem rgb(0 0 0 / 28%);
-}
-.floating-media-dock.is-expanded {
-  width: min(56rem, calc(100vw - 2rem));
 }
 .floating-media-header {
   display: flex;
@@ -1688,8 +1748,7 @@
   .message-composer > span {
     bottom: 1.7rem;
   }
-  .floating-media-dock,
-  .floating-media-dock.is-expanded {
+  .floating-media-dock {
     right: 0.5rem;
     bottom: 4.25rem;
     width: calc(100vw - 1rem);

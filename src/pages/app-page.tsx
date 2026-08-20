@@ -176,10 +176,10 @@ export function AppPage() {
     !directRecipient && !(homeActive && homeContent === 'friends')
       ? call.selectedConversation?.id
       : null;
-  const watchedConversationFocused = visibleConversationId === watchedConversationId;
-  const visibleWatchedMediaKeys = watchedConversationFocused
-    ? watchedMediaKeys
-    : watchedMediaKeys.slice(-1);
+  const watchedConversationFocused =
+    visibleConversationId === watchedConversationId &&
+    (watchedConversation?.spaceKind !== 'community' || activeView === 'call');
+  const visibleWatchedMediaKeys = watchedMediaKeys.slice(-1);
   const visibleWatchedMediaKeySet = new Set(visibleWatchedMediaKeys);
   const watchedLocalMedia = voice.localMedia.filter(
     (media) =>
@@ -210,8 +210,9 @@ export function AppPage() {
   }
 
   function activateVoiceChannel() {
+    const opensDedicatedCallView = call.selectedConversation?.spaceKind === 'community';
     if (selectedCallActive) {
-      setActiveView('call');
+      setActiveView(opensDedicatedCallView ? 'call' : 'chat');
       setCallPanelDismissed(false);
       return;
     }
@@ -220,7 +221,7 @@ export function AppPage() {
       return;
     }
     if (!call.selectedConversation?.callRoomId) return;
-    setActiveView('call');
+    setActiveView(opensDedicatedCallView ? 'call' : 'chat');
     call.joinConversationCall(call.selectedConversation.id);
   }
 
@@ -231,13 +232,25 @@ export function AppPage() {
     const mediaKey = `${publication.userId}:${publication.source}`;
     setWatchedMediaKeys((current) =>
       watchedConversationId === conversation.id
-        ? [...current.filter((key) => key !== mediaKey), mediaKey]
+        ? [
+            ...current.filter(
+              (key) => key !== mediaKey && !key.startsWith(`${publication.userId}:`),
+            ),
+            mediaKey,
+          ]
         : [mediaKey],
     );
     setWatchedConversationId(conversation.id);
     if (!selectedCallActive && voice.status === 'idle') {
       call.joinConversationCall(conversation.id);
     }
+  }
+
+  function stopWatchingPublication(publication: MediaPublication) {
+    const mediaKey = `${publication.userId}:${publication.source}`;
+    const remainingKeys = watchedMediaKeys.filter((key) => key !== mediaKey);
+    setWatchedMediaKeys(remainingKeys);
+    if (remainingKeys.length === 0) setWatchedConversationId(null);
   }
 
   function returnToWatchedConversation() {
@@ -247,7 +260,7 @@ export function AppPage() {
     setDirectRecipient(null);
     setHomeContent(conversation.kind === 'dm' ? 'dm' : 'friends');
     setNavigationContext(conversation.kind === 'dm' ? 'home' : 'group');
-    setActiveView('chat');
+    setActiveView(conversation.spaceKind === 'community' ? 'call' : 'chat');
     setChannelsOpen(false);
   }
 
@@ -345,8 +358,12 @@ export function AppPage() {
                         selectedCallActive ? callStatusLabel(voice.status) : 'Chamada ativa'
                       }
                       variant="compact"
+                      localMedia={selectedCallActive ? voice.localMedia : []}
+                      remoteMedia={selectedCallActive ? voice.remoteMedia : []}
+                      watchedMediaKeys={watchedConversationFocused ? watchedMediaKeys : []}
                       onActivate={activateVoiceChannel}
                       onWatchPublication={watchPublication}
+                      onStopWatching={stopWatchingPublication}
                     />
                   ) : null
                 }
@@ -385,35 +402,41 @@ export function AppPage() {
                 }
                 membersSidebarOpen={membersSidebarOpen}
                 controls={callStageControls}
+                localMedia={selectedCallActive ? voice.localMedia : []}
+                remoteMedia={selectedCallActive ? voice.remoteMedia : []}
+                watchedMediaKeys={watchedConversationFocused ? watchedMediaKeys : []}
                 onActivate={activateVoiceChannel}
                 onBackToChat={() => setActiveView('chat')}
                 onOpenChannels={() => setChannelsOpen(true)}
                 onToggleMembers={() => setMembersSidebarOpen((open) => !open)}
                 onWatchPublication={watchPublication}
+                onStopWatching={stopWatchingPublication}
               />
             )}
           </>
         )}
 
-        {watchedConversation && watchedMediaKeys.length > 0 && voice.status !== 'idle' && (
-          <FloatingMediaDock
-            title={
-              watchedConversation.kind === 'dm'
-                ? `@${watchedConversation.members.find((member) => member.id !== user.id)?.username ?? 'unknown'}`
-                : watchedConversation.name
-            }
-            participants={watchedCallParticipants}
-            userId={user.id}
-            localMedia={watchedLocalMedia}
-            remoteMedia={watchedRemoteMedia}
-            focusedConversation={watchedConversationFocused}
-            onClose={() => {
-              setWatchedConversationId(null);
-              setWatchedMediaKeys([]);
-            }}
-            onReturnToConversation={returnToWatchedConversation}
-          />
-        )}
+        {watchedConversation &&
+          watchedMediaKeys.length > 0 &&
+          voice.status !== 'idle' &&
+          !watchedConversationFocused && (
+            <FloatingMediaDock
+              title={
+                watchedConversation.kind === 'dm'
+                  ? `@${watchedConversation.members.find((member) => member.id !== user.id)?.username ?? 'unknown'}`
+                  : watchedConversation.name
+              }
+              participants={watchedCallParticipants}
+              userId={user.id}
+              localMedia={watchedLocalMedia}
+              remoteMedia={watchedRemoteMedia}
+              onClose={() => {
+                setWatchedConversationId(null);
+                setWatchedMediaKeys([]);
+              }}
+              onReturnToConversation={returnToWatchedConversation}
+            />
+          )}
         <div hidden aria-hidden="true">
           {voice.remoteMedia
             .filter((remote) => remote.publication.kind === 'audio')

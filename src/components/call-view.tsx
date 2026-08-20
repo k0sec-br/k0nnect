@@ -1,4 +1,5 @@
 import type { MediaPublication, RoomParticipant } from '../../shared/protocol/room';
+import type { MediaStreamView } from '../features/voice/use-voice-session';
 import { CallStage, type CallStageControls } from './call-stage';
 import { MenuIcon, PanelRightCloseIcon, PanelRightOpenIcon, VolumeIcon } from './icons';
 
@@ -13,11 +14,15 @@ export function CallView({
   statusLabel,
   membersSidebarOpen,
   controls,
+  localMedia,
+  remoteMedia,
+  watchedMediaKeys,
   onActivate,
   onBackToChat,
   onOpenChannels,
   onToggleMembers,
   onWatchPublication,
+  onStopWatching,
 }: {
   title: string;
   contextLabel: string;
@@ -29,11 +34,15 @@ export function CallView({
   statusLabel: string;
   membersSidebarOpen: boolean;
   controls: CallStageControls;
+  localMedia: MediaStreamView[];
+  remoteMedia: MediaStreamView[];
+  watchedMediaKeys: string[];
   onActivate(): void;
   onBackToChat(): void;
   onOpenChannels(): void;
   onToggleMembers(): void;
   onWatchPublication(publication: MediaPublication): void;
+  onStopWatching(publication: MediaPublication): void;
 }) {
   return (
     <section className="call-view" aria-labelledby="call-view-title">
@@ -79,8 +88,12 @@ export function CallView({
         statusLabel={statusLabel}
         variant="full"
         controls={controls}
+        localMedia={localMedia}
+        remoteMedia={remoteMedia}
+        watchedMediaKeys={watchedMediaKeys}
         onActivate={onActivate}
         onWatchPublication={onWatchPublication}
+        onStopWatching={onStopWatching}
       />
     </section>
   );
