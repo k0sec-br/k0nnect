@@ -688,6 +688,8 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(page.getByRole('heading', { name: 'Amigos', level: 1 })).toBeVisible();
   await expect(mediaDock).toBeVisible();
   await expect(mediaDock.getByRole('button', { name: 'Voltar' })).toBeVisible();
+  await expect(mediaDock.getByRole('button', { name: 'Ocultar transmissões' })).toBeVisible();
+  await expect(mediaDock.getByText('Transmissão em segundo plano')).toHaveCount(0);
   await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toHaveCount(0);
   await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
   await expect(mediaDock.getByRole('button', { name: 'Focar transmissão' })).toHaveCount(0);
@@ -855,8 +857,34 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
 
   await page.getByRole('button', { name: 'Cyber Study' }).click();
   await expect(page.getByRole('heading', { name: 'Cyber Study', level: 1 })).toBeVisible();
+  await page.getByRole('button', { name: 'Configurar grupo' }).click();
+  const groupDialog = page.getByRole('dialog', { name: 'Configurar Cyber Study' });
+  await expect(groupDialog).toBeVisible();
+  expect(await groupDialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await groupDialog.evaluate(
+      (element) =>
+        element.scrollWidth <= element.clientWidth &&
+        element.getBoundingClientRect().width <= window.innerWidth - 8,
+    ),
+  ).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await groupDialog.locator('header').getByRole('button', { name: 'Fechar' }).click();
+  await page.setViewportSize({ width: 1280, height: 720 });
   const groupCallStage = page.getByRole('region', { name: 'Cyber Study: Chamada do grupo' });
   await expect(groupCallStage).toBeVisible();
+  const ignoreCallButton = page.getByRole('button', { name: 'Ignorar chamada' });
+  await expect(ignoreCallButton).toBeVisible();
+  const ignoreCallBounds = await ignoreCallButton.boundingBox();
+  expect(ignoreCallBounds).not.toBeNull();
+  expect(Math.abs((ignoreCallBounds?.width ?? 0) - (ignoreCallBounds?.height ?? 0))).toBeLessThan(
+    1,
+  );
   await expect(groupCallStage.getByText('Bob')).toBeVisible();
   await expect(groupCallStage.getByLabel('Falando')).toBeVisible();
   expect(
