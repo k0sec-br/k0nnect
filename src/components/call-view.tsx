@@ -1,5 +1,4 @@
-import type { RoomParticipant } from '../../shared/protocol/room';
-import type { MediaStreamView } from '../features/voice/use-voice-session';
+import type { MediaPublication, RoomParticipant } from '../../shared/protocol/room';
 import { CallStage, type CallStageControls } from './call-stage';
 import { MenuIcon, PanelRightCloseIcon, PanelRightOpenIcon, VolumeIcon } from './icons';
 
@@ -8,8 +7,7 @@ export function CallView({
   contextLabel,
   participants,
   currentUserId,
-  localMedia,
-  remoteMedia,
+  publications,
   active,
   canJoin,
   statusLabel,
@@ -19,13 +17,13 @@ export function CallView({
   onBackToChat,
   onOpenChannels,
   onToggleMembers,
+  onWatchPublication,
 }: {
   title: string;
   contextLabel: string;
   participants: RoomParticipant[];
   currentUserId: string;
-  localMedia: MediaStreamView[];
-  remoteMedia: MediaStreamView[];
+  publications: MediaPublication[];
   active: boolean;
   canJoin: boolean;
   statusLabel: string;
@@ -35,6 +33,7 @@ export function CallView({
   onBackToChat(): void;
   onOpenChannels(): void;
   onToggleMembers(): void;
+  onWatchPublication(publication: MediaPublication): void;
 }) {
   return (
     <section className="call-view" aria-labelledby="call-view-title">
@@ -74,14 +73,14 @@ export function CallView({
         contextLabel={contextLabel}
         participants={participants}
         currentUserId={currentUserId}
-        localMedia={localMedia}
-        remoteMedia={remoteMedia}
+        publications={publications}
         active={active}
         canJoin={canJoin}
         statusLabel={statusLabel}
         variant="full"
         controls={controls}
         onActivate={onActivate}
+        onWatchPublication={onWatchPublication}
       />
     </section>
   );

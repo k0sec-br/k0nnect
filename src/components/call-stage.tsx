@@ -1,5 +1,4 @@
-import type { RoomParticipant } from '../../shared/protocol/room';
-import type { MediaStreamView } from '../features/voice/use-voice-session';
+import type { MediaPublication, RoomParticipant } from '../../shared/protocol/room';
 import { Avatar, participantState } from './avatar';
 import { IconButton } from './icon-button';
 import {
@@ -15,7 +14,6 @@ import {
   SwitchCameraIcon,
   VolumeIcon,
 } from './icons';
-import { MediaRoomView } from './media-room-view';
 
 interface CallControlsProps {
   muted: boolean;
@@ -114,9 +112,15 @@ function SpeakingIndicator({ speaking }: { speaking: boolean }) {
 function ParticipantTile({
   participant,
   currentUserId,
+  videoPublications,
+  canWatch,
+  onWatchPublication,
 }: {
   participant: RoomParticipant;
   currentUserId: string;
+  videoPublications: MediaPublication[];
+  canWatch: boolean;
+  onWatchPublication(publication: MediaPublication): void;
 }) {
   return (
     <article className={`call-participant-tile ${participant.speaking ? 'is-speaking' : ''}`}>
@@ -141,6 +145,21 @@ function ParticipantTile({
               ? 'Microfone desativado'
               : 'Em chamada'}
       </small>
+      {videoPublications.map((publication) => (
+        <button
+          className="button secondary compact"
+          type="button"
+          key={publication.publicationId}
+          disabled={!canWatch}
+          onClick={() => onWatchPublication(publication)}
+        >
+          {videoPublications.length === 1
+            ? 'Assistir'
+            : publication.source === 'camera'
+              ? 'Assistir câmera'
+              : 'Assistir tela'}
+        </button>
+      ))}
     </article>
   );
 }
@@ -152,31 +171,30 @@ export function CallStage({
   contextLabel,
   participants,
   currentUserId,
-  localMedia,
-  remoteMedia,
+  publications,
   active,
   canJoin,
   statusLabel,
   variant,
   controls,
   onActivate,
+  onWatchPublication,
 }: {
   title: string;
   contextLabel: string;
   participants: RoomParticipant[];
   currentUserId: string;
-  localMedia: MediaStreamView[];
-  remoteMedia: MediaStreamView[];
+  publications: MediaPublication[];
   active: boolean;
   canJoin: boolean;
   statusLabel: string;
   variant: 'compact' | 'full';
   controls?: CallStageControls;
   onActivate(): void;
+  onWatchPublication(publication: MediaPublication): void;
 }) {
-  const hasVideo = [...localMedia, ...remoteMedia].some(
-    (media) => media.publication.kind === 'video',
-  );
+  const videoPublications = publications.filter((publication) => publication.kind === 'video');
+  const hasVideo = videoPublications.length > 0;
   const participantLabel = `${participants.length} ${participants.length === 1 ? 'participante' : 'participantes'}`;
 
   return (
@@ -212,20 +230,18 @@ export function CallStage({
       </header>
 
       <div className="call-stage-content">
-        {active && hasVideo ? (
-          <MediaRoomView
-            participants={participants}
-            userId={currentUserId}
-            localMedia={localMedia}
-            remoteMedia={remoteMedia}
-          />
-        ) : participants.length > 0 ? (
+        {participants.length > 0 ? (
           <div className="call-participant-grid" aria-label="Participantes da chamada">
             {participants.map((participant) => (
               <ParticipantTile
                 key={participant.userId}
                 participant={participant}
                 currentUserId={currentUserId}
+                videoPublications={videoPublications.filter(
+                  (publication) => publication.userId === participant.userId,
+                )}
+                canWatch={canJoin || active}
+                onWatchPublication={onWatchPublication}
               />
             ))}
           </div>

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 
+import type { MediaPublication } from '../../shared/protocol/room';
 import type { FriendView, SocialUserView } from '../../shared/types/api';
 import { AppShell } from '../components/app-shell';
 import { CallStage, type CallStageControls } from '../components/call-stage';
 import { CallView } from '../components/call-view';
+import { FloatingMediaDock } from '../components/floating-media-dock';
 import { FormMessage } from '../components/form-message';
-import { IconButton } from '../components/icon-button';
-import { CloseIcon } from '../components/icons';
 import { RemoteAudio } from '../components/remote-audio';
 import { useAuth } from '../features/auth/auth-context';
 import { useCall } from '../features/call/call-context';
@@ -34,6 +34,8 @@ export function AppPage() {
   const [directRecipient, setDirectRecipient] = useState<SocialUserView | null>(null);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [callPanelDismissed, setCallPanelDismissed] = useState(false);
+  const [watchedConversationId, setWatchedConversationId] = useState<string | null>(null);
+  const [watchedMediaKeys, setWatchedMediaKeys] = useState<string[]>([]);
 
   useEffect(() => {
     if (!directRecipient) return;
@@ -107,10 +109,23 @@ export function AppPage() {
   const selectedCallParticipants = socket.participants.filter(
     (participant) => participant.channelId === selectedCallRoomId,
   );
+  const selectedCallParticipantIds = new Set(
+    selectedCallParticipants.map((participant) => participant.userId),
+  );
   const selectedCallActive = Boolean(
     voice.status !== 'idle' &&
     call.callConversation?.id === call.selectedConversation?.id &&
     selectedCallRoomId,
+  );
+  const selectedCallPublications = [
+    ...socket.publications,
+    ...(selectedCallActive
+      ? [...voice.localMedia, ...voice.remoteMedia].map((media) => media.publication)
+      : []),
+  ].filter(
+    (publication, index, publications) =>
+      selectedCallParticipantIds.has(publication.userId) &&
+      publications.findIndex((item) => item.publicationId === publication.publicationId) === index,
   );
   const canJoinSelectedCall = Boolean(
     socket.connectionId &&
@@ -150,6 +165,32 @@ export function AppPage() {
       void (voice.screenState === 'active' ? voice.stopScreenShare() : voice.startScreenShare()),
     onLeave: () => void voice.leave(),
   };
+  const watchedConversation = call.conversations.find(
+    (conversation) => conversation.id === watchedConversationId,
+  );
+  const watchedRoomId = watchedConversation?.callRoomId;
+  const watchedCallParticipants = socket.participants.filter(
+    (participant) => participant.channelId === watchedRoomId,
+  );
+  const visibleConversationId =
+    !directRecipient && !(homeActive && homeContent === 'friends')
+      ? call.selectedConversation?.id
+      : null;
+  const watchedConversationFocused = visibleConversationId === watchedConversationId;
+  const visibleWatchedMediaKeys = watchedConversationFocused
+    ? watchedMediaKeys
+    : watchedMediaKeys.slice(-1);
+  const visibleWatchedMediaKeySet = new Set(visibleWatchedMediaKeys);
+  const watchedLocalMedia = voice.localMedia.filter(
+    (media) =>
+      media.publication.kind === 'video' &&
+      visibleWatchedMediaKeySet.has(`${media.publication.userId}:${media.publication.source}`),
+  );
+  const watchedRemoteMedia = voice.remoteMedia.filter(
+    (media) =>
+      media.publication.kind === 'video' &&
+      visibleWatchedMediaKeySet.has(`${media.publication.userId}:${media.publication.source}`),
+  );
 
   function selectHomeConversation(conversationId: string) {
     call.selectConversation(conversationId);
@@ -183,15 +224,31 @@ export function AppPage() {
     call.joinConversationCall(call.selectedConversation.id);
   }
 
-  function openActiveCall() {
-    const conversation = call.callConversation;
-    if (!conversation || voice.status === 'idle') return;
+  function watchPublication(publication: MediaPublication) {
+    const conversation = call.selectedConversation;
+    if (!conversation?.callRoomId) return;
+    if (publication.kind !== 'video') return;
+    const mediaKey = `${publication.userId}:${publication.source}`;
+    setWatchedMediaKeys((current) =>
+      watchedConversationId === conversation.id
+        ? [...current.filter((key) => key !== mediaKey), mediaKey]
+        : [mediaKey],
+    );
+    setWatchedConversationId(conversation.id);
+    if (!selectedCallActive && voice.status === 'idle') {
+      call.joinConversationCall(conversation.id);
+    }
+  }
+
+  function returnToWatchedConversation() {
+    const conversation = watchedConversation;
+    if (!conversation) return;
     call.selectConversation(conversation.id);
     setDirectRecipient(null);
     setHomeContent(conversation.kind === 'dm' ? 'dm' : 'friends');
     setNavigationContext(conversation.kind === 'dm' ? 'home' : 'group');
-    setActiveView('call');
-    setCallPanelDismissed(false);
+    setActiveView('chat');
+    setChannelsOpen(false);
   }
 
   return (
@@ -281,8 +338,7 @@ export function AppPage() {
                       contextLabel={selectedCallContext}
                       participants={selectedCallParticipants}
                       currentUserId={user.id}
-                      localMedia={selectedCallActive ? voice.localMedia : []}
-                      remoteMedia={selectedCallActive ? voice.remoteMedia : []}
+                      publications={selectedCallPublications}
                       active={selectedCallActive}
                       canJoin={canJoinSelectedCall}
                       statusLabel={
@@ -290,6 +346,7 @@ export function AppPage() {
                       }
                       variant="compact"
                       onActivate={activateVoiceChannel}
+                      onWatchPublication={watchPublication}
                     />
                   ) : null
                 }
@@ -320,8 +377,7 @@ export function AppPage() {
                 contextLabel={selectedCallContext}
                 participants={selectedCallParticipants}
                 currentUserId={user.id}
-                localMedia={selectedCallActive ? voice.localMedia : []}
-                remoteMedia={selectedCallActive ? voice.remoteMedia : []}
+                publications={selectedCallPublications}
                 active={selectedCallActive}
                 canJoin={canJoinSelectedCall}
                 statusLabel={
@@ -333,40 +389,30 @@ export function AppPage() {
                 onBackToChat={() => setActiveView('chat')}
                 onOpenChannels={() => setChannelsOpen(true)}
                 onToggleMembers={() => setMembersSidebarOpen((open) => !open)}
+                onWatchPublication={watchPublication}
               />
             )}
           </>
         )}
 
-        {showCallPanel && room && !(activeView === 'call' && selectedCallActive) && (
-          <div className="global-call-bar" aria-label="Chamada ativa">
-            <button
-              className="global-call-summary"
-              type="button"
-              aria-label="Abrir chamada ativa"
-              onClick={openActiveCall}
-            >
-              <strong>
-                {call.callConversation?.kind === 'dm'
-                  ? `@${call.callConversation.members.find((member) => member.id !== user.id)?.username ?? 'unknown'}`
-                  : (call.callConversation?.name ?? room.name)}
-              </strong>
-              <span>
-                {call.callConversation?.spaceKind === 'community'
-                  ? 'Geral'
-                  : call.callConversation?.spaceKind === 'group'
-                    ? 'Chamada do grupo'
-                    : 'Chamada'}{' '}
-                · {callStatusLabel(voice.status)}
-              </span>
-            </button>
-            <IconButton
-              label="Ocultar painel da chamada"
-              onClick={() => setCallPanelDismissed(true)}
-            >
-              <CloseIcon aria-hidden="true" />
-            </IconButton>
-          </div>
+        {watchedConversation && watchedMediaKeys.length > 0 && voice.status !== 'idle' && (
+          <FloatingMediaDock
+            title={
+              watchedConversation.kind === 'dm'
+                ? `@${watchedConversation.members.find((member) => member.id !== user.id)?.username ?? 'unknown'}`
+                : watchedConversation.name
+            }
+            participants={watchedCallParticipants}
+            userId={user.id}
+            localMedia={watchedLocalMedia}
+            remoteMedia={watchedRemoteMedia}
+            focusedConversation={watchedConversationFocused}
+            onClose={() => {
+              setWatchedConversationId(null);
+              setWatchedMediaKeys([]);
+            }}
+            onReturnToConversation={returnToWatchedConversation}
+          />
         )}
         <div hidden aria-hidden="true">
           {voice.remoteMedia

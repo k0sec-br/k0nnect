@@ -62,7 +62,7 @@ function VideoTile({
           media.publication.source === 'camera' &&
           shouldMirrorLocalCamera(cameraTrack)
         }
-        label={`Vídeo de ${name}`}
+        label={`${media.publication.source === 'camera' ? 'Câmera' : 'Tela'} de ${name}`}
         onAspectRatioChange={setAspectRatio}
       />
       <span className="media-tile-label">{name}</span>
@@ -88,11 +88,13 @@ export function MediaRoomView({
   userId,
   localMedia,
   remoteMedia,
+  layout = 'stage',
 }: {
   participants: RoomParticipant[];
   userId: string;
   localMedia: MediaStreamView[];
   remoteMedia: MediaStreamView[];
+  layout?: 'grid' | 'stage';
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const media = useMemo<DisplayMedia[]>(
@@ -120,6 +122,21 @@ export function MediaRoomView({
     );
     setScreenAspectRatio(mediaTrackAspectRatio(selected?.stream.getVideoTracks()[0]) ?? 16 / 9);
   }, [screenMedia, selectedScreenId]);
+
+  if (layout === 'grid') {
+    return (
+      <section className="camera-grid floating-media-grid" aria-label="Transmissões assistidas">
+        {videoMedia.map((item) => (
+          <VideoTile
+            key={item.publication.publicationId}
+            media={item}
+            participants={participants}
+            userId={userId}
+          />
+        ))}
+      </section>
+    );
+  }
 
   if (screenMedia.length > 0) {
     const selected =

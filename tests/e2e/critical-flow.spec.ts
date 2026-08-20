@@ -631,6 +631,24 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(callStage.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
   await callStage.getByRole('button', { name: 'Compartilhar tela' }).click();
   await expect(callStage.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
+  await callStage.getByRole('button', { name: 'Assistir câmera' }).click();
+  await callStage.getByRole('button', { name: 'Assistir tela' }).click();
+  const mediaDock = page.getByRole('region', { name: 'Transmissões de K0Sec' });
+  await expect(mediaDock).toBeVisible();
+  await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toBeVisible();
+  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
+  await mediaDock.getByRole('button', { name: 'Ampliar transmissões' }).click();
+  await expect(mediaDock.getByRole('button', { name: 'Reduzir transmissões' })).toBeVisible();
+  await mediaDock.getByRole('button', { name: 'Reduzir transmissões' }).click();
+  const dockBeforeDrag = await mediaDock.boundingBox();
+  const dockHeader = await mediaDock.locator('.floating-media-header').boundingBox();
+  if (!dockBeforeDrag || !dockHeader) throw new Error('Dock de mídia não mensurável.');
+  await page.mouse.move(dockHeader.x + 80, dockHeader.y + dockHeader.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dockHeader.x - 80, dockHeader.y - 60);
+  await page.mouse.up();
+  const dockAfterDrag = await mediaDock.boundingBox();
+  expect(dockAfterDrag?.x).toBeLessThan(dockBeforeDrag.x - 50);
   expect(realtimeStats.create).toBe(1);
   expect(realtimeStats.publish).toBe(3);
   const navigationMetricsBefore = await page.evaluate(() => {
@@ -654,6 +672,22 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(memberSidebar).not.toBeVisible();
   await page.getByRole('button', { name: 'chat', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
+  const composer = page.getByLabel('Mensagem para K0Sec');
+  const compactComposerHeight = (await composer.boundingBox())?.height ?? 0;
+  await composer.fill(Array.from({ length: 30 }, (_, index) => `linha ${index}`).join('\n'));
+  const expandedComposerHeight = (await composer.boundingBox())?.height ?? 0;
+  expect(expandedComposerHeight).toBeGreaterThan(compactComposerHeight);
+  expect(expandedComposerHeight).toBeLessThanOrEqual(360);
+  await composer.fill('');
+  await page.getByRole('button', { name: 'k0nnect' }).click();
+  await expect(page.getByRole('heading', { name: 'Amigos', level: 1 })).toBeVisible();
+  await expect(mediaDock.getByRole('button', { name: 'Voltar à conversa' })).toBeVisible();
+  await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toHaveCount(0);
+  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
+  await mediaDock.getByRole('button', { name: 'Voltar à conversa' }).click();
+  await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
+  await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toBeVisible();
+  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
   expect(realtimeStats.create).toBe(1);
   await page.getByRole('button', { name: 'Geral' }).click();
   await expect(callStage).toBeVisible();
@@ -744,10 +778,14 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   expect(realtimeStats.publish).toBe(6);
   await page.getByRole('link', { name: 'Voltar' }).click();
   await expect(page).toHaveURL(/\/app$/u);
-  await page.getByRole('button', { name: 'Abrir chamada ativa' }).click();
+  await expect(page.getByLabel('Chamada ativa')).toHaveCount(0);
+  await page.getByRole('button', { name: 'K0Sec', exact: true }).click();
+  await page.getByRole('button', { name: 'Geral' }).click();
+  await callStage.getByRole('button', { name: 'Assistir câmera' }).click();
+  await callStage.getByRole('button', { name: 'Assistir tela' }).click();
   await expect(callStage.getByRole('button', { name: 'Desativar câmera' })).toBeVisible();
   await expect(callStage.getByRole('button', { name: 'Parar compartilhamento' })).toBeVisible();
-  await expect(page.getByLabel('Vídeo de Alice (você)')).not.toHaveClass(/is-mirrored/u);
+  await expect(page.getByLabel('Tela de Alice (você)')).not.toHaveClass(/is-mirrored/u);
   expect(realtimeStats.create).toBe(2);
   expect(realtimeStats.publish).toBe(6);
   expect(
@@ -793,6 +831,8 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
     'aria-pressed',
     'false',
   );
+  await mediaDock.getByRole('button', { name: 'Ocultar transmissões' }).click();
+  await expect(mediaDock).not.toBeVisible();
   await callStage.getByRole('button', { name: 'Sair da chamada' }).click();
   await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
 
