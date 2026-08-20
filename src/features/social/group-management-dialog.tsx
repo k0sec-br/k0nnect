@@ -90,116 +90,118 @@ export function GroupManagementDialog(props: GroupManagementDialogProps) {
           </button>
         </header>
 
-        {isOwner && (
-          <form onSubmit={(event) => void rename(event)}>
-            <label htmlFor="rename-group">Nome do grupo</label>
-            <div className="inline-social-form">
-              <input
-                id="rename-group"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                minLength={1}
-                maxLength={40}
-                required
-              />
-              <button className="button secondary" type="submit" disabled={busy || !name.trim()}>
-                Salvar
-              </button>
-            </div>
-          </form>
-        )}
+        <div className="group-management-content">
+          {isOwner && (
+            <form onSubmit={(event) => void rename(event)}>
+              <label htmlFor="rename-group">Nome do grupo</label>
+              <div className="inline-social-form">
+                <input
+                  id="rename-group"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  minLength={1}
+                  maxLength={40}
+                  required
+                />
+                <button className="button secondary" type="submit" disabled={busy || !name.trim()}>
+                  Salvar
+                </button>
+              </div>
+            </form>
+          )}
 
-        <section className="dialog-section">
-          <h3>Membros — {props.conversation.members.length}/20</h3>
-          {props.conversation.members.map((member) => (
-            <div className="dialog-member-row" key={member.id}>
-              <span>
-                <strong>{member.displayName}</strong>
-                <small>@{member.username}</small>
-              </span>
-              {member.id === props.conversation.ownerUserId ? (
-                <small>Owner</small>
-              ) : isOwner ? (
-                <div>
-                  <button
-                    className="button secondary compact"
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      void mutate(
-                        () =>
-                          apiClient.post<{ social: SocialStateView }>(
-                            `/api/social/groups/${props.conversation.id}/transfer`,
-                            { newOwnerId: member.id },
-                          ),
-                        'Propriedade transferida.',
-                      )
-                    }
-                  >
-                    Tornar owner
-                  </button>
-                  <button
-                    className="button danger-outline compact"
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      void mutate(
-                        () =>
-                          apiClient.delete<{ social: SocialStateView }>(
-                            `/api/social/groups/${props.conversation.id}/members/${member.id}`,
-                          ),
-                        'Membro removido.',
-                      )
-                    }
-                  >
-                    Remover
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </section>
+          <section className="dialog-section">
+            <h3>Membros — {props.conversation.members.length}/20</h3>
+            {props.conversation.members.map((member) => (
+              <div className="dialog-member-row" key={member.id}>
+                <span>
+                  <strong>{member.displayName}</strong>
+                  <small>@{member.username}</small>
+                </span>
+                {member.id === props.conversation.ownerUserId ? (
+                  <small>Owner</small>
+                ) : isOwner ? (
+                  <div>
+                    <button
+                      className="button secondary compact"
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void mutate(
+                          () =>
+                            apiClient.post<{ social: SocialStateView }>(
+                              `/api/social/groups/${props.conversation.id}/transfer`,
+                              { newOwnerId: member.id },
+                            ),
+                          'Propriedade transferida.',
+                        )
+                      }
+                    >
+                      Tornar owner
+                    </button>
+                    <button
+                      className="button danger-outline compact"
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void mutate(
+                          () =>
+                            apiClient.delete<{ social: SocialStateView }>(
+                              `/api/social/groups/${props.conversation.id}/members/${member.id}`,
+                            ),
+                          'Membro removido.',
+                        )
+                      }
+                    >
+                      Remover
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </section>
 
-        {isOwner && addableFriends.length > 0 && props.conversation.members.length < 20 && (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!friendId) return;
-              void mutate(
-                () =>
-                  apiClient.post<{ social: SocialStateView }>(
-                    `/api/social/groups/${props.conversation.id}/members`,
-                    { userId: friendId },
-                  ),
-                'Membro adicionado.',
-              ).then((changed) => {
-                if (changed) setFriendId('');
-              });
-            }}
-          >
-            <label htmlFor="add-group-member">Adicionar amigo</label>
-            <div className="inline-social-form">
-              <select
-                id="add-group-member"
-                value={friendId}
-                onChange={(event) => setFriendId(event.target.value)}
-                required
-              >
-                <option value="">Selecione</option>
-                {addableFriends.map((friend) => (
-                  <option value={friend.id} key={friend.id}>
-                    {friend.displayName} (@{friend.username})
-                  </option>
-                ))}
-              </select>
-              <button className="button secondary" type="submit" disabled={busy || !friendId}>
-                Adicionar
-              </button>
-            </div>
-          </form>
-        )}
+          {isOwner && addableFriends.length > 0 && props.conversation.members.length < 20 && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!friendId) return;
+                void mutate(
+                  () =>
+                    apiClient.post<{ social: SocialStateView }>(
+                      `/api/social/groups/${props.conversation.id}/members`,
+                      { userId: friendId },
+                    ),
+                  'Membro adicionado.',
+                ).then((changed) => {
+                  if (changed) setFriendId('');
+                });
+              }}
+            >
+              <label htmlFor="add-group-member">Adicionar amigo</label>
+              <div className="inline-social-form">
+                <select
+                  id="add-group-member"
+                  value={friendId}
+                  onChange={(event) => setFriendId(event.target.value)}
+                  required
+                >
+                  <option value="">Selecione</option>
+                  {addableFriends.map((friend) => (
+                    <option value={friend.id} key={friend.id}>
+                      {friend.displayName} (@{friend.username})
+                    </option>
+                  ))}
+                </select>
+                <button className="button secondary" type="submit" disabled={busy || !friendId}>
+                  Adicionar
+                </button>
+              </div>
+            </form>
+          )}
 
-        {feedback && <FormMessage message={feedback} tone="success" />}
+          {feedback && <FormMessage message={feedback} tone="success" />}
+        </div>
         <footer>
           {isOwner ? (
             <button

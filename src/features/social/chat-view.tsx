@@ -20,6 +20,7 @@ import { Avatar } from '../../components/avatar';
 import { FormMessage } from '../../components/form-message';
 import { IconButton } from '../../components/icon-button';
 import {
+  CloseIcon,
   MenuIcon,
   MoreIcon,
   PanelRightCloseIcon,
@@ -356,13 +357,13 @@ export function ChatView(props: ChatViewProps) {
         <div className="ephemeral-call-stage">
           {props.callStage}
           {!props.callActive && (
-            <button
-              className="button ghost ephemeral-call-ignore"
-              type="button"
+            <IconButton
+              className="ephemeral-call-ignore"
+              label="Ignorar chamada"
               onClick={() => setIgnoredCallRoomId(props.conversation?.callRoomId ?? null)}
             >
-              Ignorar
-            </button>
+              <CloseIcon aria-hidden="true" />
+            </IconButton>
           )}
         </div>
       )}

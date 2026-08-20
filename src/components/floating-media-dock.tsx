@@ -120,9 +120,8 @@ export function FloatingMediaDock({
       >
         <div className="floating-media-context">
           <strong>{title}</strong>
-          <small>Transmissão em segundo plano</small>
         </div>
-        <div>
+        <div className="floating-media-actions">
           <button
             className="button ghost compact floating-media-return"
             type="button"
