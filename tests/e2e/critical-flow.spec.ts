@@ -637,8 +637,13 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(mediaDock).toBeVisible();
   await expect(mediaDock.getByLabel('Câmera de Alice (você)')).toBeVisible();
   await expect(mediaDock.getByLabel('Tela de Alice (você)')).toBeVisible();
+  await expect(mediaDock.getByLabel('Tela de Alice (você)')).toHaveCSS('object-fit', 'contain');
+  expect((await mediaDock.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(640);
   await mediaDock.getByRole('button', { name: 'Ampliar transmissões' }).click();
   await expect(mediaDock.getByRole('button', { name: 'Reduzir transmissões' })).toBeVisible();
+  expect((await mediaDock.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+    896,
+  );
   await mediaDock.getByRole('button', { name: 'Reduzir transmissões' }).click();
   const dockBeforeDrag = await mediaDock.boundingBox();
   const dockHeader = await mediaDock.locator('.floating-media-header').boundingBox();
@@ -673,6 +678,9 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await page.getByRole('button', { name: 'chat', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
   const composer = page.getByLabel('Mensagem para K0Sec');
+  expect(
+    (await composer.locator('xpath=..').boundingBox())?.height ?? Number.POSITIVE_INFINITY,
+  ).toBeLessThan(80);
   const compactComposerHeight = (await composer.boundingBox())?.height ?? 0;
   await composer.fill(Array.from({ length: 30 }, (_, index) => `linha ${index}`).join('\n'));
   const expandedComposerHeight = (await composer.boundingBox())?.height ?? 0;
@@ -842,6 +850,10 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await expect(groupCallStage).toBeVisible();
   await expect(groupCallStage.getByText('Bob')).toBeVisible();
   await expect(groupCallStage.getByLabel('Falando')).toBeVisible();
+  expect(
+    (await groupCallStage.locator('.call-participant-tile').first().boundingBox())?.width ??
+      Number.POSITIVE_INFINITY,
+  ).toBeLessThanOrEqual(192);
   const channelSidebar = page.getByRole('complementary', { name: 'Canais' });
   await expect(channelSidebar.getByText('Voz', { exact: true })).toHaveCount(0);
   await expect(channelSidebar.getByRole('button', { name: 'Geral' })).toHaveCount(0);

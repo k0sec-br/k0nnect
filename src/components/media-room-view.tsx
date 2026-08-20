@@ -27,12 +27,14 @@ function VideoTile({
   participants,
   userId,
   compact = false,
+  fitContainer = false,
   onSelect,
 }: {
   media: DisplayMedia;
   participants: RoomParticipant[];
   userId: string;
   compact?: boolean;
+  fitContainer?: boolean;
   onSelect?(): void;
 }) {
   const tileRef = useRef<HTMLElement>(null);
@@ -47,7 +49,7 @@ function VideoTile({
   useEffect(() => {
     setAspectRatio(mediaTrackAspectRatio(media.stream.getVideoTracks()[0]) ?? 16 / 9);
   }, [media.stream]);
-  const tileClassName = `media-tile ${compact ? 'is-compact' : ''} ${
+  const tileClassName = `media-tile ${compact ? 'is-compact' : ''} ${fitContainer ? 'is-fit-container' : ''} ${
     media.local && media.publication.source === 'camera' && shouldMirrorLocalCamera(cameraTrack)
       ? 'is-local-camera'
       : ''
@@ -69,7 +71,11 @@ function VideoTile({
     </>
   );
   return (
-    <article className={tileClassName} ref={tileRef} style={{ aspectRatio }}>
+    <article
+      className={tileClassName}
+      ref={tileRef}
+      style={fitContainer ? undefined : { aspectRatio }}
+    >
       {content}
       <div className="media-tile-actions">
         {onSelect && (
@@ -132,6 +138,7 @@ export function MediaRoomView({
             media={item}
             participants={participants}
             userId={userId}
+            fitContainer
           />
         ))}
       </section>
