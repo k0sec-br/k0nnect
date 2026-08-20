@@ -134,6 +134,9 @@ export function ChatView(props: ChatViewProps) {
         (props.recipient ? `@${props.recipient.username}` : 'Conversa'));
   const communityConversation = props.conversation?.spaceKind === 'community';
   const privateCallAvailable = Boolean(props.conversation?.callRoomId && !communityConversation);
+  const showPrivateCallStage = Boolean(
+    privateCallAvailable && props.callStage && ignoredCallRoomId !== props.conversation?.callRoomId,
+  );
   const conversationId = props.conversation?.id;
   const cacheId = conversationId ?? (props.recipient ? `pending_${props.recipient.id}` : null);
   const getMessages = props.getMessages;
@@ -299,7 +302,10 @@ export function ChatView(props: ChatViewProps) {
   }
 
   return (
-    <section className="chat-view" aria-labelledby="chat-title">
+    <section
+      className={`chat-view ${showPrivateCallStage ? 'has-call-stage' : ''}`}
+      aria-labelledby="chat-title"
+    >
       <header className="main-header chat-header">
         <button
           className="icon-button mobile-menu-button"
@@ -346,22 +352,20 @@ export function ChatView(props: ChatViewProps) {
           )}
         </button>
       </header>
-      {privateCallAvailable &&
-        props.callStage &&
-        ignoredCallRoomId !== props.conversation?.callRoomId && (
-          <div className="ephemeral-call-stage">
-            {props.callStage}
-            {!props.callActive && (
-              <button
-                className="button ghost ephemeral-call-ignore"
-                type="button"
-                onClick={() => setIgnoredCallRoomId(props.conversation?.callRoomId ?? null)}
-              >
-                Ignorar
-              </button>
-            )}
-          </div>
-        )}
+      {showPrivateCallStage && props.callStage && (
+        <div className="ephemeral-call-stage">
+          {props.callStage}
+          {!props.callActive && (
+            <button
+              className="button ghost ephemeral-call-ignore"
+              type="button"
+              onClick={() => setIgnoredCallRoomId(props.conversation?.callRoomId ?? null)}
+            >
+              Ignorar
+            </button>
+          )}
+        </div>
+      )}
       <div
         className="message-list"
         aria-live="polite"

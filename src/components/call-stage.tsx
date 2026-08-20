@@ -119,30 +119,21 @@ function SpeakingIndicator({ speaking }: { speaking: boolean }) {
 function ParticipantTile({
   participant,
   currentUserId,
-  videoPublications,
-  watchedPublication,
-  watchedMedia,
-  canWatch,
-  onWatchPublication,
-  onStopWatching,
+  cameraPublication,
+  cameraMedia,
 }: {
   participant: RoomParticipant;
   currentUserId: string;
-  videoPublications: MediaPublication[];
-  watchedPublication: MediaPublication | undefined;
-  watchedMedia: MediaStreamView | undefined;
-  canWatch: boolean;
-  onWatchPublication(publication: MediaPublication): void;
-  onStopWatching(publication: MediaPublication): void;
+  cameraPublication: MediaPublication | undefined;
+  cameraMedia: MediaStreamView | undefined;
 }) {
   const tileRef = useRef<HTMLElement>(null);
   const participantName = `${participant.displayName}${
     participant.userId === currentUserId ? ' (você)' : ''
   }`;
 
-  if (watchedPublication) {
-    const localCamera =
-      participant.userId === currentUserId && watchedPublication.source === 'camera';
+  if (cameraPublication) {
+    const localCamera = participant.userId === currentUserId;
     return (
       <article
         ref={tileRef}
@@ -150,26 +141,21 @@ function ParticipantTile({
           participant.speaking ? 'is-speaking' : ''
         }`}
       >
-        {watchedMedia ? (
+        {cameraMedia ? (
           <MediaVideo
-            stream={watchedMedia.stream}
+            stream={cameraMedia.stream}
             muted={participant.userId === currentUserId}
             mirrored={
-              localCamera && shouldMirrorLocalCamera(watchedMedia.stream.getVideoTracks()[0])
+              localCamera && shouldMirrorLocalCamera(cameraMedia.stream.getVideoTracks()[0])
             }
-            label={`${watchedPublication.source === 'camera' ? 'Câmera' : 'Tela'} de ${
-              participantName
-            }`}
+            label={`Câmera de ${participantName}`}
           />
         ) : (
-          <span className="inline-media-pending">Preparando transmissão…</span>
+          <span className="inline-media-pending">Preparando câmera…</span>
         )}
         <span className="inline-media-label">{participantName}</span>
         <div className="inline-media-actions">
-          {watchedMedia && <FullscreenButton targetRef={tileRef} />}
-          <IconButton label="Parar de assistir" onClick={() => onStopWatching(watchedPublication)}>
-            <CloseIcon aria-hidden="true" />
-          </IconButton>
+          {cameraMedia && <FullscreenButton targetRef={tileRef} />}
         </div>
       </article>
     );
@@ -195,21 +181,70 @@ function ParticipantTile({
               ? 'Microfone desativado'
               : 'Em chamada'}
       </small>
-      {videoPublications.map((publication) => (
-        <button
-          className="button secondary compact"
-          type="button"
-          key={publication.publicationId}
-          disabled={!canWatch}
-          onClick={() => onWatchPublication(publication)}
-        >
-          {videoPublications.length === 1
-            ? 'Assistir'
-            : publication.source === 'camera'
-              ? 'Assistir câmera'
-              : 'Assistir tela'}
-        </button>
-      ))}
+    </article>
+  );
+}
+
+function ScreenShareTile({
+  publication,
+  media,
+  participant,
+  currentUserId,
+  watched,
+  canWatch,
+  onWatchPublication,
+  onStopWatching,
+}: {
+  publication: MediaPublication;
+  media: MediaStreamView | undefined;
+  participant: RoomParticipant;
+  currentUserId: string;
+  watched: boolean;
+  canWatch: boolean;
+  onWatchPublication(publication: MediaPublication): void;
+  onStopWatching(publication: MediaPublication): void;
+}) {
+  const tileRef = useRef<HTMLElement>(null);
+  const participantName = `${participant.displayName}${
+    participant.userId === currentUserId ? ' (você)' : ''
+  }`;
+
+  if (watched) {
+    return (
+      <article ref={tileRef} className="call-participant-tile has-inline-media is-screen-share">
+        {media ? (
+          <MediaVideo
+            stream={media.stream}
+            muted={participant.userId === currentUserId}
+            label={`Tela de ${participantName}`}
+          />
+        ) : (
+          <span className="inline-media-pending">Preparando transmissão…</span>
+        )}
+        <span className="inline-media-label">Tela de {participantName}</span>
+        <div className="inline-media-actions">
+          {media && <FullscreenButton targetRef={tileRef} />}
+          <IconButton label="Parar de assistir" onClick={() => onStopWatching(publication)}>
+            <CloseIcon aria-hidden="true" />
+          </IconButton>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article className="call-participant-tile screen-share-available">
+      <ScreenShareIcon aria-hidden="true" />
+      <strong>Tela de {participantName}</strong>
+      <small>Compartilhamento disponível</small>
+      <button
+        className="button secondary compact"
+        type="button"
+        disabled={!canWatch}
+        onClick={() => onWatchPublication(publication)}
+      >
+        Assistir
+      </button>
     </article>
   );
 }
@@ -294,33 +329,50 @@ export function CallStage({
         {participants.length > 0 ? (
           <div className="call-participant-grid" aria-label="Participantes da chamada">
             {participants.map((participant) => {
-              const participantPublications = videoPublications.filter(
-                (publication) => publication.userId === participant.userId,
+              const cameraPublication = videoPublications.find(
+                (publication) =>
+                  publication.userId === participant.userId && publication.source === 'camera',
               );
-              const watchedPublication = participantPublications.find((publication) =>
-                watchedMediaKeys.includes(`${publication.userId}:${publication.source}`),
+              const cameraMedia = videoMedia.find(
+                (media) =>
+                  media.publication.userId === participant.userId &&
+                  media.publication.source === 'camera',
               );
-              const watchedMedia = watchedPublication
-                ? videoMedia.find(
-                    (media) =>
-                      media.publication.userId === watchedPublication.userId &&
-                      media.publication.source === watchedPublication.source,
-                  )
-                : undefined;
               return (
                 <ParticipantTile
                   key={participant.userId}
                   participant={participant}
                   currentUserId={currentUserId}
-                  videoPublications={participantPublications}
-                  watchedPublication={watchedPublication}
-                  watchedMedia={watchedMedia}
-                  canWatch={canJoin || active}
-                  onWatchPublication={onWatchPublication}
-                  onStopWatching={onStopWatching}
+                  cameraPublication={cameraPublication}
+                  cameraMedia={cameraMedia}
                 />
               );
             })}
+            {videoPublications
+              .filter((publication) => publication.source === 'screen-video')
+              .map((publication) => {
+                const participant = participants.find((item) => item.userId === publication.userId);
+                if (!participant) return null;
+                return (
+                  <ScreenShareTile
+                    key={publication.publicationId}
+                    publication={publication}
+                    media={videoMedia.find(
+                      (item) =>
+                        item.publication.userId === publication.userId &&
+                        item.publication.source === publication.source,
+                    )}
+                    participant={participant}
+                    currentUserId={currentUserId}
+                    watched={watchedMediaKeys.includes(
+                      `${publication.userId}:${publication.source}`,
+                    )}
+                    canWatch={canJoin || active}
+                    onWatchPublication={onWatchPublication}
+                    onStopWatching={onStopWatching}
+                  />
+                );
+              })}
           </div>
         ) : (
           <p className="call-stage-empty">Aguardando participantes…</p>

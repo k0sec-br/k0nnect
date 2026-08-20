@@ -228,7 +228,7 @@ export function AppPage() {
   function watchPublication(publication: MediaPublication) {
     const conversation = call.selectedConversation;
     if (!conversation?.callRoomId) return;
-    if (publication.kind !== 'video') return;
+    if (publication.kind !== 'video' || publication.source !== 'screen-video') return;
     const mediaKey = `${publication.userId}:${publication.source}`;
     setWatchedMediaKeys((current) =>
       watchedConversationId === conversation.id

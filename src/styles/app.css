@@ -703,6 +703,9 @@
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
+.chat-view.has-call-stage {
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+}
 .load-older-button {
   display: block;
   margin: 0 auto 1rem;
@@ -814,7 +817,8 @@
   padding: clamp(0.75rem, 2vw, 1.25rem);
 }
 .call-stage.is-compact .call-stage-content {
-  max-height: 10rem;
+  max-height: 11rem;
+  overflow-y: hidden;
   padding: 0.65rem clamp(0.8rem, 2.5vw, 1.5rem);
 }
 .call-stage.is-compact .call-participant-grid {
@@ -824,7 +828,8 @@
 }
 .call-stage.is-compact .call-participant-tile {
   width: 9rem;
-  min-height: 6.75rem;
+  height: 7.5rem;
+  min-height: 7.5rem;
   flex: 0 0 9rem;
   padding: 0.5rem;
 }
@@ -887,6 +892,17 @@
 .call-participant-tile small {
   color: var(--text-tertiary);
   font-size: 0.65rem;
+}
+.screen-share-available > svg {
+  width: 2.25rem;
+  height: 2.25rem;
+  color: var(--accent-hover);
+}
+.screen-share-available .button {
+  width: auto;
+  min-height: 1.85rem;
+  margin-top: 0.1rem;
+  padding: 0.25rem 0.65rem;
 }
 .call-participant-tile.has-inline-media {
   position: relative;
