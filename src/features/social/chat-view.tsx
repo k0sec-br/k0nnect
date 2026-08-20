@@ -118,6 +118,7 @@ export function ChatView(props: ChatViewProps) {
   const [mobileMenuMessageId, setMobileMenuMessageId] = useState<number | null>(null);
   const [ignoredCallRoomId, setIgnoredCallRoomId] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const editInputRef = useRef<HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const nearEndRef = useRef(true);
@@ -189,6 +190,21 @@ export function ChatView(props: ChatViewProps) {
     }
     previousMessageCountRef.current = messages.length;
   }, [messages]);
+
+  useLayoutEffect(() => {
+    const input = composerInputRef.current;
+    if (!input) return;
+    const resize = () => {
+      input.style.height = '0px';
+      const maximumHeight = Math.max(42, window.innerHeight * 0.5);
+      const nextHeight = Math.min(input.scrollHeight, maximumHeight);
+      input.style.height = `${nextHeight}px`;
+      input.style.overflowY = input.scrollHeight > maximumHeight ? 'auto' : 'hidden';
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [content]);
 
   useEffect(() => {
     if (editingMessageId === null) return;
@@ -522,6 +538,7 @@ export function ChatView(props: ChatViewProps) {
           Mensagem para {title}
         </label>
         <textarea
+          ref={composerInputRef}
           id="message-content"
           value={content}
           onChange={(event) => setContent(event.target.value)}

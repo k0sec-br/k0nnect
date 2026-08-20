@@ -1048,8 +1048,8 @@
 }
 .message-composer textarea {
   min-height: 2.6rem;
-  max-height: 8rem;
-  resize: vertical;
+  max-height: 50dvh;
+  resize: none;
   padding: 0.65rem 3.8rem 0.65rem 0.75rem;
 }
 .message-composer > span {
