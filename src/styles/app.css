@@ -817,14 +817,17 @@
   padding: clamp(0.75rem, 2vw, 1.25rem);
 }
 .call-stage.is-compact .call-stage-content {
-  max-height: 11rem;
+  --compact-media-tile-width: clamp(13rem, 22vw, 16rem);
+  --compact-media-tile-height: 8.25rem;
+  max-height: 10rem;
   overflow-y: hidden;
-  padding: 0.65rem clamp(0.8rem, 2.5vw, 1.5rem);
+  padding: 0.75rem clamp(0.8rem, 2.5vw, 1.5rem);
 }
 .call-stage.is-compact .call-participant-grid {
   display: flex;
+  gap: 0.7rem;
   overflow-x: auto;
-  padding-bottom: 0.15rem;
+  padding-bottom: 0.25rem;
 }
 .call-stage.is-compact .call-participant-tile {
   width: 9rem;
@@ -833,11 +836,14 @@
   flex: 0 0 9rem;
   padding: 0.5rem;
 }
+.call-stage.is-compact .call-participant-tile.has-inline-media,
+.call-stage.is-compact .call-participant-tile.screen-share-available {
+  width: var(--compact-media-tile-width);
+  height: var(--compact-media-tile-height);
+  min-height: var(--compact-media-tile-height);
+  flex-basis: var(--compact-media-tile-width);
+}
 .call-stage.is-compact .call-participant-tile.has-inline-media {
-  width: clamp(18rem, 34vw, 28rem);
-  height: 8rem;
-  min-height: 8rem;
-  flex-basis: clamp(18rem, 34vw, 28rem);
   padding: 0;
 }
 .call-stage.is-compact .call-participant-tile .avatar {
@@ -894,14 +900,19 @@
   font-size: 0.65rem;
 }
 .screen-share-available > svg {
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2rem;
+  height: 2rem;
   color: var(--accent-hover);
+}
+.screen-share-available {
+  align-content: center;
+  gap: 0.3rem;
+  background: color-mix(in srgb, var(--surface-sidebar) 82%, var(--accent) 18%);
 }
 .screen-share-available .button {
   width: auto;
   min-height: 1.85rem;
-  margin-top: 0.1rem;
+  margin-top: 0.2rem;
   padding: 0.25rem 0.65rem;
 }
 .call-participant-tile.has-inline-media {
