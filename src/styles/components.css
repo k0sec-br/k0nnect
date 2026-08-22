@@ -303,6 +303,9 @@ select {
 .device-select.is-compact .device-select-value small {
   display: none;
 }
+.device-select.is-compact .device-select-popover {
+  width: min(15rem, calc(100vw - 2rem));
+}
 input:hover,
 select:hover {
   border-color: var(--border-hover);
