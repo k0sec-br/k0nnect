@@ -64,6 +64,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const resumedCallRef = useRef(false);
   const shouldResumeCameraRef = useRef(false);
   const hadActiveCallRef = useRef(false);
+  const switchingCallRef = useRef(false);
   const selectedConversation =
     bootstrap?.conversations.find((conversation) => conversation.id === selectedConversationId) ??
     defaultConversation ??
@@ -164,6 +165,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     voice,
   });
   const joinVoice = voice.join;
+  const switchVoiceCall = voice.switchCall;
 
   useEffect(() => {
     if (!bootstrap || !user) return;
@@ -215,7 +217,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       });
       return;
     }
-    if (hadActiveCallRef.current && voice.status === 'idle') {
+    if (hadActiveCallRef.current && voice.status === 'idle' && !switchingCallRef.current) {
       hadActiveCallRef.current = false;
       callResumeRef.current = null;
       clearCallResumeState(bootstrap.server.id, user.id);
@@ -228,10 +230,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
       const conversation = bootstrap?.conversations.find((item) => item.id === conversationId);
       if (!conversation?.callRoomId) return;
       hadActiveCallRef.current = true;
-      setCallConversationId(conversationId);
-      void joinVoice(false, conversation.callRoomId);
+      if (voice.status === 'idle') {
+        setCallConversationId(conversationId);
+        void joinVoice(false, conversation.callRoomId);
+        return;
+      }
+      switchingCallRef.current = true;
+      void switchVoiceCall(conversation.callRoomId).then(() => {
+        hadActiveCallRef.current = true;
+        setCallConversationId(conversationId);
+      }).finally(() => {
+        switchingCallRef.current = false;
+      });
     },
-    [bootstrap?.conversations, joinVoice],
+    [bootstrap?.conversations, joinVoice, switchVoiceCall, voice.status],
   );
 
   const value = useMemo<CallContextValue>(

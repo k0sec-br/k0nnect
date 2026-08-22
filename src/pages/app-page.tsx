@@ -129,14 +129,16 @@ export function AppPage() {
       selectedCallParticipantIds.has(publication.userId) &&
       publications.findIndex((item) => item.publicationId === publication.publicationId) === index,
   );
+  const selectedConversation = directRecipient ? null : call.selectedConversation;
   const canJoinSelectedCall = Boolean(
     socket.connectionId &&
-    config?.realtimeEnabled &&
-    selectedCallRoomId &&
-    (voice.status === 'idle' || selectedCallActive),
+      config?.realtimeEnabled &&
+      selectedCallRoomId &&
+      (voice.status === 'idle' ||
+        selectedCallActive ||
+        call.callConversation?.id !== selectedConversation?.id),
   );
   const selectedCallAvailable = selectedCallParticipants.length > 0 || selectedCallActive;
-  const selectedConversation = directRecipient ? null : call.selectedConversation;
   const selectedPeer = selectedConversation?.members.find((member) => member.id !== user.id);
   const selectedCallTitle =
     selectedConversation?.spaceKind === 'community'
@@ -212,19 +214,24 @@ export function AppPage() {
   }
 
   function activateVoiceChannel() {
-    const opensDedicatedCallView = call.selectedConversation?.spaceKind === 'community';
+    const conversation = call.selectedConversation;
+    const opensDedicatedCallView = conversation?.spaceKind === 'community';
     if (selectedCallActive) {
       setActiveView(opensDedicatedCallView ? 'call' : 'chat');
       setCallPanelDismissed(false);
       return;
     }
     if (voice.status !== 'idle') {
+      if (conversation?.callRoomId && call.callConversation?.id !== conversation.id) {
+        setActiveView(opensDedicatedCallView ? 'call' : 'chat');
+        call.joinConversationCall(conversation.id);
+      }
       setCallPanelDismissed(false);
       return;
     }
-    if (!call.selectedConversation?.callRoomId) return;
+    if (!conversation?.callRoomId) return;
     setActiveView(opensDedicatedCallView ? 'call' : 'chat');
-    call.joinConversationCall(call.selectedConversation.id);
+    call.joinConversationCall(conversation.id);
   }
 
   function watchPublication(publication: MediaPublication) {

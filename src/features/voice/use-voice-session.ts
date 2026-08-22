@@ -95,6 +95,7 @@ export function useVoiceSession({
   const recoveryOperationRef = useRef<Promise<boolean> | null>(null);
   const pendingPublicationClosuresRef = useRef(new Map<string, MediaEndReason>());
   const sessionGenerationRef = useRef(0);
+  const statusRef = useRef<'connected' | 'idle' | 'joining' | 'reconnecting' | 'recovering'>('idle');
   const subscriptionRetryAttemptRef = useRef(0);
   const subscriptionRetryTimerRef = useRef<number | null>(null);
   const startFailureRetryableRef = useRef(false);
@@ -121,6 +122,7 @@ export function useVoiceSession({
   const [reconciliationNeeded, setReconciliationNeeded] = useState(false);
   const [callConflict, setCallConflict] = useState(false);
   const [subscriptionRetryVersion, setSubscriptionRetryVersion] = useState(0);
+  statusRef.current = status;
 
   const clearSubscriptionRetry = useCallback(() => {
     if (subscriptionRetryTimerRef.current !== null) {
@@ -274,10 +276,11 @@ export function useVoiceSession({
 
   const join = useCallback(
     async (takeover = false, targetRoomId = roomId) => {
-      if (!connectionId || status !== 'idle' || joinInFlightRef.current) return;
+      if (!connectionId || statusRef.current !== 'idle' || joinInFlightRef.current) return;
       joinInFlightRef.current = true;
       userRequestedDisconnectRef.current = false;
       sessionGenerationRef.current += 1;
+      statusRef.current = 'joining';
       setStatus('joining');
       setError('');
       setCallConflict(false);
@@ -287,6 +290,7 @@ export function useVoiceSession({
         if (!started) {
           joinInFlightRef.current = false;
           if (startFailureRetryableRef.current) {
+            statusRef.current = 'reconnecting';
             setStatus('reconnecting');
             return;
           }
@@ -294,12 +298,13 @@ export function useVoiceSession({
         }
       } catch (caught) {
         joinInFlightRef.current = false;
+        statusRef.current = 'idle';
         setStatus('idle');
         setCallConflict(caught instanceof CallConflictError);
         setError(caught instanceof Error ? caught.message : 'Não foi possível entrar na chamada.');
       }
     },
-    [connectionId, joinCall, leaveCall, roomId, startClient, status],
+    [connectionId, joinCall, leaveCall, roomId, startClient],
   );
 
   const leave = useCallback(async () => {
@@ -332,11 +337,20 @@ export function useVoiceSession({
     cameraWantedRef.current = false;
     screenWantedRef.current = false;
     pendingPublicationClosuresRef.current.clear();
+    statusRef.current = 'idle';
     setStatus('idle');
     voiceControlsRef.current = INITIAL_VOICE_CONTROL_STATE;
     setVoiceControls(INITIAL_VOICE_CONTROL_STATE);
     await Promise.all([client?.stop(), leaveCall().catch(() => undefined)]);
   }, [clearSubscriptionRetry, leaveCall]);
+
+  const switchCall = useCallback(
+    async (targetRoomId: string) => {
+      if (statusRef.current !== 'idle') await leave();
+      await join(false, targetRoomId);
+    },
+    [join, leave],
+  );
 
   useEffect(() => {
     if (!connectionId && clientRef.current) void leave();
@@ -1032,6 +1046,7 @@ export function useVoiceSession({
     connectionSnapshot,
     error,
     join,
+    switchCall,
     takeoverCall: () => join(true),
     leave,
     localMedia,
