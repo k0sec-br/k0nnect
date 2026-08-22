@@ -620,6 +620,13 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await page.getByRole('button', { name: 'Ocultar membros' }).click();
   await expect(memberSidebar).not.toBeVisible();
 
+  const mobileGroupRail = page.getByRole('complementary', { name: 'Grupos' });
+  await expect(mobileGroupRail).toBeVisible();
+  await mobileGroupRail.getByRole('button', { name: 'Cyber Study' }).click();
+  await expect(page.getByRole('heading', { name: 'Cyber Study', level: 1 })).toBeVisible();
+  await mobileGroupRail.getByRole('button', { name: 'K0Sec' }).click();
+  await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
+
   for (const width of [1366, 1440, 1920, 2560]) {
     await page.setViewportSize({ width, height: 900 });
     const expandedContentWidth = (await appMain.boundingBox())?.width ?? 0;

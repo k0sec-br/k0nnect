@@ -1686,16 +1686,24 @@
 @media (max-width: 767px) {
   .app-shell {
     display: block;
+    padding-left: 4.5rem;
   }
   .group-rail {
-    display: none;
+    position: fixed;
+    z-index: 50;
+    top: 0;
+    left: 0;
+    display: flex;
+    width: 4.5rem;
+    height: 100dvh;
+    padding-inline: 0.55rem;
   }
   .channel-sidebar {
     position: fixed;
-    z-index: 40;
+    z-index: 45;
     top: 0;
-    left: 0;
-    width: min(17rem, 86vw);
+    left: 4.5rem;
+    width: min(17rem, calc(100vw - 4.5rem));
     transform: translateX(-100%);
     transition: transform var(--transition-fast);
   }
@@ -1707,7 +1715,12 @@
   }
   .app-main {
     height: 100dvh;
+    width: calc(100vw - 4.5rem);
+    margin-left: 0;
     padding-bottom: 3.75rem;
+  }
+  .drawer-backdrop {
+    left: 4.5rem;
   }
   .mobile-menu-button {
     display: grid;
