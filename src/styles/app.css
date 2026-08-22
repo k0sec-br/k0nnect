@@ -758,11 +758,14 @@
   border-bottom: 1px solid var(--border-default);
   background: var(--surface-deep);
 }
+.ephemeral-call-stage .call-stage-header {
+  padding-right: 4rem;
+}
 .ephemeral-call-ignore {
   position: absolute;
   z-index: 2;
   top: 0.5rem;
-  right: 5.25rem;
+  right: 0.65rem;
   display: grid;
   width: 2.25rem;
   height: 2.25rem;
