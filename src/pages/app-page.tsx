@@ -338,8 +338,8 @@ export function AppPage() {
               <ChatView
                 conversation={selectedConversation}
                 recipient={directRecipient}
+                currentDisplayName={user.displayName}
                 currentUserId={user.id}
-                currentUsername={user.username}
                 getMessages={socket.getChatMessages}
                 isHistoryLoaded={socket.isHistoryLoaded}
                 subscribeChat={socket.subscribeChat}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { callStatusLabel, shouldShowCallPanel } from '../../src/features/call/call-panel-state';
-import { chatAuthorUsername } from '../../src/features/social/chat-author';
+import { chatAuthorDisplayName } from '../../src/features/social/chat-author';
 
 const message = {
   id: 1,
@@ -31,25 +31,25 @@ describe('painel de chamada', () => {
 });
 
 describe('autor de mensagem', () => {
-  it('sempre identifica a própria mensagem com o username', () => {
+  it('identifica a própria mensagem com o nome de exibição', () => {
     expect(
-      chatAuthorUsername({
+      chatAuthorDisplayName({
         message,
+        currentDisplayName: 'Owner',
         currentUserId: 'user_owner',
-        currentUsername: 'owner',
         conversation: null,
         recipient: null,
       }),
-    ).toBe('@owner');
+    ).toBe('Owner');
   });
 
-  it('usa o cache de membros e um fallback seguro para outros autores', () => {
+  it('usa o nome de exibição dos membros e um fallback seguro para outros autores', () => {
     const remoteMessage = { ...message, senderId: 'user_member' };
     expect(
-      chatAuthorUsername({
+      chatAuthorDisplayName({
         message: remoteMessage,
+        currentDisplayName: 'Owner',
         currentUserId: 'user_owner',
-        currentUsername: 'owner',
         conversation: {
           id: 'conversation_general',
           kind: 'group',
@@ -63,15 +63,15 @@ describe('autor de mensagem', () => {
         },
         recipient: null,
       }),
-    ).toBe('@member');
+    ).toBe('Membro');
     expect(
-      chatAuthorUsername({
+      chatAuthorDisplayName({
         message: remoteMessage,
+        currentDisplayName: 'Owner',
         currentUserId: 'user_owner',
-        currentUsername: 'owner',
         conversation: null,
         recipient: null,
       }),
-    ).toBe('@unknown');
+    ).toBe('Participante');
   });
 });

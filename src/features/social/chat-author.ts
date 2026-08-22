@@ -6,22 +6,22 @@ import type {
 
 interface ChatAuthorInput {
   message: ChatMessageView;
+  currentDisplayName: string;
   currentUserId: string;
-  currentUsername: string;
   conversation: ConversationSummary | null;
   recipient: SocialUserView | null;
 }
 
-export function chatAuthorUsername({
+export function chatAuthorDisplayName({
   message,
+  currentDisplayName,
   currentUserId,
-  currentUsername,
   conversation,
   recipient,
 }: ChatAuthorInput): string {
-  if (message.senderId === currentUserId) return `@${currentUsername}`;
+  if (message.senderId === currentUserId) return currentDisplayName;
 
   const member = conversation?.members.find((item) => item.id === message.senderId);
   const author = member ?? recipient;
-  return author ? `@${author.username}` : '@unknown';
+  return author?.displayName ?? 'Participante';
 }

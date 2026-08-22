@@ -30,14 +30,14 @@ import {
   TrashIcon,
 } from '../../components/icons';
 import { apiClient } from '../../lib/api-client';
-import { chatAuthorUsername } from './chat-author';
+import { chatAuthorDisplayName } from './chat-author';
 import { GroupManagementDialog } from './group-management-dialog';
 
 interface ChatViewProps {
   conversation: ConversationSummary | null;
   recipient: SocialUserView | null;
+  currentDisplayName: string;
   currentUserId: string;
-  currentUsername: string;
   getMessages(conversationId: string | null): ChatMessageView[];
   isHistoryLoaded(conversationId: string | null): boolean;
   subscribeChat(conversationId: string | null, listener: () => void): () => void;
@@ -396,10 +396,10 @@ export function ChatView(props: ChatViewProps) {
           </div>
         )}
         {messages.map((message) => {
-          const author = chatAuthorUsername({
+          const author = chatAuthorDisplayName({
             message,
+            currentDisplayName: props.currentDisplayName,
             currentUserId: props.currentUserId,
-            currentUsername: props.currentUsername,
             conversation: props.conversation,
             recipient: props.recipient,
           });
@@ -408,7 +408,7 @@ export function ChatView(props: ChatViewProps) {
               className={`chat-message ${message.deliveryState === 'sending' ? 'is-pending' : ''} ${message.deliveryState === 'failed' ? 'is-failed' : ''}`}
               key={`${message.clientMessageId}-${message.id}`}
             >
-              <Avatar displayName={author.slice(1)} size="small" showStatus={false} />
+              <Avatar displayName={author} size="small" showStatus={false} />
               <div>
                 <header>
                   <strong>{author}</strong>
