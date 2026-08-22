@@ -584,8 +584,16 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   const carolFriendRow = page.locator('.social-row').filter({ hasText: '@carol' });
   await expect(carolFriendRow.getByText('Offline', { exact: true })).toBeVisible();
   await expect(
-    page.getByRole('button', { name: '@carol' }).locator('.avatar-offline'),
+    page.getByRole('button', { name: 'Carol', exact: true }).locator('.avatar-offline'),
   ).toBeVisible();
+  const directMessageButton = page.getByRole('button', { name: 'Carol', exact: true });
+  await expect(directMessageButton).toHaveClass(/home-navigation-item/u);
+  await expect(directMessageButton.locator('span[title="@carol"]')).toBeVisible();
+  await directMessageButton.click();
+  await expect(directMessageButton).toHaveClass(/is-active/u);
+  await expect(directMessageButton).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await page.getByRole('button', { name: 'Amigos', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Amigos', level: 1 })).toBeVisible();
   await page.getByRole('button', { name: 'K0Sec' }).click();
   await expect(page.getByRole('heading', { name: 'K0Sec', level: 1 })).toBeVisible();
   await expect(page.getByText('Alice (você)').first()).toBeVisible();
@@ -930,13 +938,13 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await channelSidebar.getByRole('button', { name: 'Desconectar' }).click();
 
   await page.getByRole('button', { name: 'k0nnect' }).click();
-  await page.getByRole('button', { name: '@carol' }).click();
-  await expect(page.getByRole('heading', { name: '@carol', level: 1 })).toBeVisible();
-  const dmCallStage = page.getByRole('region', { name: '@carol: Chamada com @carol' });
+  await page.getByRole('button', { name: 'Carol', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Carol', level: 1 })).toBeVisible();
+  const dmCallStage = page.getByRole('region', { name: 'Carol: Chamada com Carol' });
   await expect(dmCallStage).toBeVisible();
   await expect(dmCallStage.getByText('Carol', { exact: true })).toBeVisible();
   await dmCallStage.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page.getByRole('heading', { name: '@carol', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Carol', level: 1 })).toBeVisible();
   await expect(dmCallStage.getByRole('button', { name: 'Conectado' })).toBeDisabled();
   await channelSidebar.getByRole('button', { name: 'Desconectar' }).click();
   expect(pageErrors).toEqual([]);

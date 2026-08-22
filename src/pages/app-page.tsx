@@ -24,7 +24,9 @@ export function AppPage() {
   const { logout, updateSocialState, user } = useAuth();
   const call = useCall();
   const { config, connectionState, members, room, socket, voice } = call;
-  const [channelsOpen, setChannelsOpen] = useState(false);
+  const [channelsOpen, setChannelsOpen] = useState(() =>
+    window.matchMedia('(max-width: 767px)').matches,
+  );
   const [membersSidebarOpen, setMembersSidebarOpen] = useState(
     () => window.matchMedia('(min-width: 1200px)').matches,
   );
@@ -140,11 +142,11 @@ export function AppPage() {
     selectedConversation?.spaceKind === 'community'
       ? 'Geral'
       : selectedConversation?.kind === 'dm'
-        ? `Chamada com @${selectedPeer?.username ?? 'unknown'}`
+        ? `Chamada com ${selectedPeer?.displayName ?? 'contato'}`
         : 'Chamada do grupo';
   const selectedCallContext =
     selectedConversation?.kind === 'dm'
-      ? `@${selectedPeer?.username ?? 'unknown'}`
+      ? (selectedPeer?.displayName ?? 'Conversa')
       : (selectedConversation?.name ?? 'k0nnect');
   const callStageControls: CallStageControls = {
     muted: voice.muted,

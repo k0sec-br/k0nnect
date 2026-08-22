@@ -308,7 +308,12 @@ function ChannelSidebar({
             <div className="channel-category">
               <span>Social</span>
             </div>
-            <button className="voice-channel is-active" type="button" onClick={onHomeSelect}>
+            <button
+              className={`voice-channel home-navigation-item ${selectedConversation?.kind !== 'dm' ? 'is-active' : ''}`}
+              type="button"
+              aria-current={selectedConversation?.kind !== 'dm' ? 'page' : undefined}
+              onClick={onHomeSelect}
+            >
               <UsersIcon aria-hidden="true" />
               <span>Amigos</span>
             </button>
@@ -321,7 +326,7 @@ function ChannelSidebar({
                 const peer = conversation.members.find((member) => member.id !== user.id);
                 return (
                   <button
-                    className={`voice-channel ${selectedConversation?.id === conversation.id ? 'is-active' : ''}`}
+                    className={`voice-channel home-navigation-item ${selectedConversation?.id === conversation.id ? 'is-active' : ''}`}
                     type="button"
                     key={conversation.id}
                     aria-current={selectedConversation?.id === conversation.id ? 'page' : undefined}
@@ -332,7 +337,9 @@ function ChannelSidebar({
                       state={peer && onlineUserIds.includes(peer.id) ? 'online' : 'offline'}
                       size="small"
                     />
-                    <span>@{peer?.username ?? conversation.name}</span>
+                    <span title={peer?.username ? `@${peer.username}` : undefined}>
+                      {peer?.displayName ?? conversation.name}
+                    </span>
                   </button>
                 );
               })}

@@ -137,6 +137,22 @@
   background: var(--surface-active);
   color: var(--text-primary);
 }
+.home-navigation-item {
+  min-height: 2.65rem;
+  margin-bottom: 0.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+}
+.home-navigation-item:hover {
+  border-color: var(--text-tertiary);
+  background: transparent;
+}
+.home-navigation-item.is-active {
+  border-color: var(--accent);
+  background: transparent;
+  color: var(--text-primary);
+}
 .voice-channel svg {
   width: 1rem;
   height: 1rem;

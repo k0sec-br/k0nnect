@@ -130,9 +130,9 @@ export function ChatView(props: ChatViewProps) {
   const peer = props.conversation?.members.find((member) => member.id !== props.currentUserId);
   const title =
     props.conversation?.kind === 'dm'
-      ? `@${peer?.username ?? 'unknown'}`
+      ? (peer?.displayName ?? 'Conversa')
       : (props.conversation?.name ??
-        (props.recipient ? `@${props.recipient.username}` : 'Conversa'));
+        (props.recipient ? props.recipient.displayName : 'Conversa'));
   const communityConversation = props.conversation?.spaceKind === 'community';
   const privateCallAvailable = Boolean(props.conversation?.callRoomId && !communityConversation);
   const showPrivateCallStage = Boolean(
