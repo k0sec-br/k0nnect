@@ -23,6 +23,12 @@ import { useAuth } from '../auth/auth-context';
 import { useServerRealtime } from '../rooms/use-server-realtime';
 import { useVoiceSession } from '../voice/use-voice-session';
 import { useCallConnectionSupervisor } from './use-call-connection-supervisor';
+import {
+  clearCallResumeState,
+  loadCallResumeState,
+  saveCallResumeState,
+  type CallResumeState,
+} from './call-resume';
 
 interface CallContextValue {
   config: ReturnType<typeof usePublicConfig>;
@@ -54,6 +60,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
   );
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [callConversationId, setCallConversationId] = useState<string | null>(null);
+  const callResumeRef = useRef<CallResumeState | null>(null);
+  const resumedCallRef = useRef(false);
+  const shouldResumeCameraRef = useRef(false);
+  const hadActiveCallRef = useRef(false);
   const selectedConversation =
     bootstrap?.conversations.find((conversation) => conversation.id === selectedConversationId) ??
     defaultConversation ??
@@ -116,10 +126,27 @@ export function CallProvider({ children }: { children: ReactNode }) {
     [members, realtime.participants],
   );
   const socket = useMemo(() => ({ ...realtime, participants }), [participants, realtime]);
+  const callRoomParticipantIds = useMemo(
+    () =>
+      new Set(
+        realtime.participants
+          .filter((participant) => participant.channelId === callConversation?.callRoomId)
+          .map((participant) => participant.userId),
+      ),
+    [callConversation?.callRoomId, realtime.participants],
+  );
+  const callPublications = useMemo(
+    () =>
+      socket.publications.filter(
+        (publication) =>
+          publication.userId !== user?.id && callRoomParticipantIds.has(publication.userId),
+      ),
+    [callRoomParticipantIds, socket.publications, user?.id],
+  );
   const voice = useVoiceSession({
     roomId: room?.id ?? 'room_general',
     connectionId: socket.connectionId,
-    publications: socket.publications.filter((publication) => publication.userId !== user?.id),
+    publications: callPublications,
     joinCall: socket.joinCall,
     leaveCall: socket.leaveCall,
     updatePresence: socket.updatePresence,
@@ -137,10 +164,70 @@ export function CallProvider({ children }: { children: ReactNode }) {
     voice,
   });
   const joinVoice = voice.join;
+
+  useEffect(() => {
+    if (!bootstrap || !user) return;
+    callResumeRef.current = loadCallResumeState(bootstrap.server.id, user.id);
+    resumedCallRef.current = false;
+    shouldResumeCameraRef.current = false;
+    hadActiveCallRef.current = false;
+  }, [bootstrap?.server.id, user?.id]);
+
+  useEffect(() => {
+    const resumeState = callResumeRef.current;
+    if (
+      !resumeState ||
+      resumedCallRef.current ||
+      !socket.connectionId ||
+      voice.status !== 'idle'
+    ) {
+      return;
+    }
+    const conversation = bootstrap?.conversations.find(
+      (item) => item.id === resumeState.conversationId,
+    );
+    if (!conversation?.callRoomId || !bootstrap || !user) {
+      if (bootstrap && user) clearCallResumeState(bootstrap.server.id, user.id);
+      callResumeRef.current = null;
+      return;
+    }
+    resumedCallRef.current = true;
+    shouldResumeCameraRef.current = resumeState.cameraEnabled;
+    hadActiveCallRef.current = true;
+    setCallConversationId(conversation.id);
+    void joinVoice(false, conversation.callRoomId);
+  }, [bootstrap, joinVoice, socket.connectionId, user, voice.status]);
+
+  useEffect(() => {
+    if (!shouldResumeCameraRef.current || voice.status !== 'connected') return;
+    shouldResumeCameraRef.current = false;
+    if (voice.cameraState === 'idle') void voice.startCamera();
+  }, [voice.cameraState, voice.startCamera, voice.status]);
+
+  useEffect(() => {
+    if (!bootstrap || !user) return;
+    const active = ['joining', 'connected', 'reconnecting', 'recovering'].includes(voice.status);
+    if (callConversationId && active) {
+      hadActiveCallRef.current = true;
+      saveCallResumeState(bootstrap.server.id, user.id, {
+        cameraEnabled: voice.cameraState !== 'idle',
+        conversationId: callConversationId,
+      });
+      return;
+    }
+    if (hadActiveCallRef.current && voice.status === 'idle') {
+      hadActiveCallRef.current = false;
+      callResumeRef.current = null;
+      clearCallResumeState(bootstrap.server.id, user.id);
+      setCallConversationId(null);
+    }
+  }, [bootstrap, callConversationId, user, voice.cameraState, voice.status]);
+
   const joinConversationCall = useCallback(
     (conversationId: string) => {
       const conversation = bootstrap?.conversations.find((item) => item.id === conversationId);
       if (!conversation?.callRoomId) return;
+      hadActiveCallRef.current = true;
       setCallConversationId(conversationId);
       void joinVoice(false, conversation.callRoomId);
     },

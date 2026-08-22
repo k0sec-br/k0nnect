@@ -9,6 +9,11 @@ import {
 } from '../../../shared/protocol/room';
 import type { ChatMessageView, MemberView, SocialStateView } from '../../../shared/types/api';
 import { incrementDevelopmentMetric } from '../../lib/development-metrics';
+import {
+  clearRealtimeResumeIdentity,
+  loadRealtimeResumeIdentity,
+  saveRealtimeResumeIdentity,
+} from './realtime-resume';
 
 export type RealtimeConnectionState =
   'connected' | 'connecting' | 'disconnected' | 'offline' | 'reconnecting';
@@ -27,6 +32,7 @@ interface PendingCommand {
 const SOCKET_READY_TIMEOUT_MS = 10_000;
 const COMMAND_TIMEOUT_MS = 8_000;
 const EMPTY_CHAT_MESSAGES: ChatMessageView[] = [];
+const RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
 
 export class CallConflictError extends Error {
   override name = 'CallConflictError';
@@ -103,10 +109,26 @@ export function useServerRealtime(
   useEffect(() => {
     if (!serverId || !userId) return;
     activeRef.current = true;
+    const persistedConnection = loadRealtimeResumeIdentity(serverId, userId);
+    logicalConnectionRef.current = persistedConnection
+      ? {
+          connectionId: persistedConnection.connectionId,
+          connectionEpoch: persistedConnection.connectionEpoch,
+        }
+      : null;
+    let pageIsUnloading = false;
+    let reconnectAttempt = 0;
+    let reconnectTimer: number | null = null;
     const pendingCommands = pendingCommandsRef.current;
     const historyLoadedConversationIds = historyLoadedConversationIdsRef.current;
     const chatListeners = chatListenersRef.current;
 
+    let scheduleReconnect = (_immediate = false) => undefined;
+    const clearReconnectTimer = () => {
+      if (reconnectTimer === null) return;
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    };
     const connect = async (): Promise<boolean> => {
       if (!activeRef.current) return false;
       const currentSocket = socketRef.current;
@@ -181,6 +203,9 @@ export function useServerRealtime(
               connectionEpoch: realtimeMessage.payload.connectionEpoch,
               connectionId: realtimeMessage.payload.connectionId,
             };
+            saveRealtimeResumeIdentity(serverId, userId, logicalConnectionRef.current);
+            reconnectAttempt = 0;
+            clearReconnectTimer();
             setConnectionId(realtimeMessage.payload.connectionId);
             setOnlineUserIds(realtimeMessage.payload.onlineUserIds);
             setParticipants(realtimeMessage.payload.participants);
@@ -380,6 +405,7 @@ export function useServerRealtime(
           if (!shouldReconnectServerSocket(event.code)) {
             if (event.code === 4003) {
               logicalConnectionRef.current = null;
+              clearRealtimeResumeIdentity(serverId, userId);
               setConnectionId(null);
               setConnectionState('offline');
               setMessage('Sua sessão foi encerrada. Entre novamente para continuar.');
@@ -387,19 +413,49 @@ export function useServerRealtime(
             return;
           }
           setConnectionState('disconnected');
+          scheduleReconnect();
         });
         socket.addEventListener('error', () => socket.close(4000, 'Erro de transporte'));
       });
     };
 
+    scheduleReconnect = (immediate = false) => {
+      if (!activeRef.current || reconnectTimer !== null || !navigator.onLine) return;
+      const delay = immediate ? 0 : RECONNECT_DELAYS_MS[Math.min(reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
+      reconnectAttempt += 1;
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        void connect().then((connected) => {
+          if (!connected) scheduleReconnect();
+        });
+      }, delay);
+    };
+
+    const handleOnline = () => scheduleReconnect(true);
+    const handlePageHide = () => {
+      pageIsUnloading = true;
+      socketRef.current?.close(4004, 'Suspending realtime connection');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('pagehide', handlePageHide);
+
     connectRef.current = connect;
-    void connect();
+    void connect().then((connected) => {
+      if (!connected) scheduleReconnect();
+    });
     return () => {
       activeRef.current = false;
+      clearReconnectTimer();
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('pagehide', handlePageHide);
       transportGenerationRef.current += 1;
-      socketRef.current?.close(1000, 'Saindo do servidor');
+      socketRef.current?.close(
+        pageIsUnloading ? 4004 : 1000,
+        pageIsUnloading ? 'Suspending realtime connection' : 'Leaving server',
+      );
       socketRef.current = null;
       logicalConnectionRef.current = null;
+      if (!pageIsUnloading) clearRealtimeResumeIdentity(serverId, userId);
       setConnectionId(null);
       for (const pending of pendingCommands.values()) {
         window.clearTimeout(pending.timer);
