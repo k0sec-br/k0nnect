@@ -34,6 +34,14 @@ export interface MediaStreamView {
   stream: MediaStream;
 }
 
+const SUBSCRIPTION_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000];
+
+export function subscriptionRetryDelayMs(attempt: number): number {
+  return SUBSCRIPTION_RETRY_DELAYS_MS[
+    Math.min(attempt, SUBSCRIPTION_RETRY_DELAYS_MS.length - 1)
+  ]!;
+}
+
 export function useVoiceSession({
   roomId,
   connectionId,
@@ -82,6 +90,8 @@ export function useVoiceSession({
   const recoveryOperationRef = useRef<Promise<boolean> | null>(null);
   const pendingPublicationClosuresRef = useRef(new Map<string, MediaEndReason>());
   const sessionGenerationRef = useRef(0);
+  const subscriptionRetryAttemptRef = useRef(0);
+  const subscriptionRetryTimerRef = useRef<number | null>(null);
 
   const [status, setStatus] = useState<
     'connected' | 'idle' | 'joining' | 'reconnecting' | 'recovering'
@@ -104,6 +114,25 @@ export function useVoiceSession({
   const [lastRecoveryReason, setLastRecoveryReason] = useState('');
   const [reconciliationNeeded, setReconciliationNeeded] = useState(false);
   const [callConflict, setCallConflict] = useState(false);
+  const [subscriptionRetryVersion, setSubscriptionRetryVersion] = useState(0);
+
+  const clearSubscriptionRetry = useCallback(() => {
+    if (subscriptionRetryTimerRef.current !== null) {
+      window.clearTimeout(subscriptionRetryTimerRef.current);
+      subscriptionRetryTimerRef.current = null;
+    }
+    subscriptionRetryAttemptRef.current = 0;
+  }, []);
+
+  const scheduleSubscriptionRetry = useCallback(() => {
+    if (subscriptionRetryTimerRef.current !== null) return;
+    const delay = subscriptionRetryDelayMs(subscriptionRetryAttemptRef.current);
+    subscriptionRetryAttemptRef.current += 1;
+    subscriptionRetryTimerRef.current = window.setTimeout(() => {
+      subscriptionRetryTimerRef.current = null;
+      setSubscriptionRetryVersion((version) => version + 1);
+    }, delay);
+  }, []);
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -281,6 +310,7 @@ export function useVoiceSession({
     activeConnectionIdRef.current = null;
     microphoneTrackRef.current = null;
     subscribedPublicationIdsRef.current.clear();
+    clearSubscriptionRetry();
     setRemoteMedia([]);
     setLocalMedia([]);
     setCameraState('idle');
@@ -294,7 +324,7 @@ export function useVoiceSession({
     voiceControlsRef.current = INITIAL_VOICE_CONTROL_STATE;
     setVoiceControls(INITIAL_VOICE_CONTROL_STATE);
     await Promise.all([client?.stop(), leaveCall().catch(() => undefined)]);
-  }, [leaveCall]);
+  }, [clearSubscriptionRetry, leaveCall]);
 
   useEffect(() => {
     if (!connectionId && clientRef.current) void leave();
@@ -325,18 +355,32 @@ export function useVoiceSession({
     const pending = publications
       .filter((publication) => !subscribedPublicationIdsRef.current.has(publication.publicationId))
       .sort((left, right) => sourcePriority[left.source] - sourcePriority[right.source]);
+    if (pending.length > 0 && subscriptionRetryTimerRef.current !== null) return;
     for (const publication of pending) {
       subscribedPublicationIdsRef.current.add(publication.publicationId);
     }
     if (pending.length > 0) {
-      void client.subscribeMany(pending).catch((caught) => {
-        for (const publication of pending) {
-          subscribedPublicationIdsRef.current.delete(publication.publicationId);
-        }
-        setError(mediaErrorMessage(caught));
-      });
+      void client
+        .subscribeMany(pending)
+        .then(() => clearSubscriptionRetry())
+        .catch((caught) => {
+          for (const publication of pending) {
+            subscribedPublicationIdsRef.current.delete(publication.publicationId);
+          }
+          setError(mediaErrorMessage(caught));
+          scheduleSubscriptionRetry();
+        });
+    } else {
+      clearSubscriptionRetry();
     }
-  }, [publications, removeRemoteMedia, status]);
+  }, [
+    clearSubscriptionRetry,
+    publications,
+    removeRemoteMedia,
+    scheduleSubscriptionRetry,
+    status,
+    subscriptionRetryVersion,
+  ]);
 
   useEffect(
     () => () => {
@@ -344,6 +388,9 @@ export function useVoiceSession({
       sessionGenerationRef.current += 1;
       detectorCleanupRef.current?.();
       statsCollectorRef.current?.stop();
+      if (subscriptionRetryTimerRef.current !== null) {
+        window.clearTimeout(subscriptionRetryTimerRef.current);
+      }
       if (clientRef.current) void clientRef.current.stop();
     },
     [],

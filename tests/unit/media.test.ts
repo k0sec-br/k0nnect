@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { mediaErrorMessage } from '../../src/features/voice/media-errors';
 import { NegotiationQueue } from '../../src/features/voice/negotiation-queue';
+import { subscriptionRetryDelayMs } from '../../src/features/voice/use-voice-session';
 import { realtimeSessionRequestSchema } from '../../shared/schemas/realtime';
 import { findAudioTransceiverMid } from '../../worker/realtime/sdp';
 
@@ -86,5 +87,11 @@ describe('camada de mídia', () => {
     expect(
       findAudioTransceiverMid('v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:0'),
     ).toBeUndefined();
+  });
+
+  it('limita a espera para uma nova inscrição de mídia', () => {
+    expect(subscriptionRetryDelayMs(0)).toBe(500);
+    expect(subscriptionRetryDelayMs(2)).toBe(2_000);
+    expect(subscriptionRetryDelayMs(99)).toBe(8_000);
   });
 });
