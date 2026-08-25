@@ -615,6 +615,15 @@ test('convite, recovery, sala, controles de voz, logout e login', async ({ page 
   await page.getByRole('button', { name: 'Ocultar membros' }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
+  const mobileVoiceBar = page.locator('.mobile-voice-bar');
+  await expect(mobileVoiceBar).toBeVisible();
+  await expect(
+    mobileVoiceBar.getByRole('button', { name: 'Ativar microfone' }),
+  ).toBeDisabled();
+  await expect(mobileVoiceBar.getByRole('button', { name: 'Ativar câmera' })).toBeDisabled();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(
+    true,
+  );
   await page.getByRole('button', { name: 'Exibir membros' }).click();
   await expect(memberSidebar).toBeVisible();
   await page.getByRole('button', { name: 'Ocultar membros' }).click();

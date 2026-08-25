@@ -10,7 +10,7 @@ import { FormMessage } from '../components/form-message';
 import { RemoteAudio } from '../components/remote-audio';
 import { useAuth } from '../features/auth/auth-context';
 import { useCall } from '../features/call/call-context';
-import { callStatusLabel, shouldShowCallPanel } from '../features/call/call-panel-state';
+import { callStatusLabel } from '../features/call/call-panel-state';
 import { ChatView } from '../features/social/chat-view';
 import { CreateGroupDialog } from '../features/social/create-group-dialog';
 import { SocialHome } from '../features/social/social-home';
@@ -35,7 +35,7 @@ export function AppPage() {
   const [activeView, setActiveView] = useState<ActiveView>('chat');
   const [directRecipient, setDirectRecipient] = useState<SocialUserView | null>(null);
   const [creatingGroup, setCreatingGroup] = useState(false);
-  const [callPanelDismissed, setCallPanelDismissed] = useState(false);
+  const [visibleRuntimeMessage, setVisibleRuntimeMessage] = useState('');
   const [watchedConversationId, setWatchedConversationId] = useState<string | null>(null);
   const [watchedMediaKeys, setWatchedMediaKeys] = useState<string[]>([]);
 
@@ -53,11 +53,19 @@ export function AppPage() {
   }, [call, directRecipient]);
 
   useEffect(() => {
-    if (voice.status === 'idle') {
-      setCallPanelDismissed(false);
-      setActiveView('chat');
-    }
+    if (voice.status === 'idle') setActiveView('chat');
   }, [voice.status]);
+
+  const runtimeMessage = voice.error || socket.message || call.loadError;
+  useEffect(() => {
+    if (!runtimeMessage) {
+      setVisibleRuntimeMessage('');
+      return;
+    }
+    setVisibleRuntimeMessage(runtimeMessage);
+    const timeout = window.setTimeout(() => setVisibleRuntimeMessage(''), 2_000);
+    return () => window.clearTimeout(timeout);
+  }, [runtimeMessage]);
 
   if (!user) return null;
 
@@ -106,7 +114,6 @@ export function AppPage() {
   const canSendMessage = directRecipient
     ? call.friends.some((friend) => friend.id === directRecipient.id)
     : canSendToSelectedConversation;
-  const showCallPanel = shouldShowCallPanel(voice.status, callPanelDismissed);
   const selectedCallRoomId = directRecipient ? null : call.selectedConversation?.callRoomId;
   const selectedCallParticipants = socket.participants.filter(
     (participant) => participant.channelId === selectedCallRoomId,
@@ -218,7 +225,6 @@ export function AppPage() {
     const opensDedicatedCallView = conversation?.spaceKind === 'community';
     if (selectedCallActive) {
       setActiveView(opensDedicatedCallView ? 'call' : 'chat');
-      setCallPanelDismissed(false);
       return;
     }
     if (voice.status !== 'idle') {
@@ -226,7 +232,6 @@ export function AppPage() {
         setActiveView(opensDedicatedCallView ? 'call' : 'chat');
         call.joinConversationCall(conversation.id);
       }
-      setCallPanelDismissed(false);
       return;
     }
     if (!conversation?.callRoomId) return;
@@ -287,7 +292,6 @@ export function AppPage() {
       navigationContext={navigationContext}
       activeView={activeView}
       voice={shellVoice}
-      showCallPanel={showCallPanel}
       channelsOpen={channelsOpen}
       membersOpen={friendsHomeActive ? false : membersSidebarOpen}
       onChannelsOpenChange={setChannelsOpen}
@@ -304,13 +308,10 @@ export function AppPage() {
       onTextChannelActivate={() => setActiveView('chat')}
       onCreateGroup={() => setCreatingGroup(true)}
       onVoiceChannelActivate={activateVoiceChannel}
-      onDismissCallPanel={() => setCallPanelDismissed(true)}
       onLogout={() => void logout().then(() => navigate('/login'))}
     >
       <div className="social-app-main">
-        {(socket.message || voice.error || call.loadError) && (
-          <FormMessage message={voice.error || socket.message || call.loadError} />
-        )}
+        {visibleRuntimeMessage && <FormMessage message={visibleRuntimeMessage} />}
         {voice.callConflict && (
           <button
             className="button secondary call-conflict-action"

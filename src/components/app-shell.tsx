@@ -17,8 +17,6 @@ import {
   HeadphonesOffIcon,
   MicIcon,
   MicOffIcon,
-  PanelRightCloseIcon,
-  PanelRightOpenIcon,
   PlusIcon,
   ScreenShareIcon,
   ScreenShareOffIcon,
@@ -74,7 +72,6 @@ interface AppShellProps {
   navigationContext: 'group' | 'home';
   activeView: 'call' | 'chat';
   voice: VoiceControls;
-  showCallPanel: boolean;
   channelsOpen: boolean;
   membersOpen: boolean;
   onChannelsOpenChange(open: boolean): void;
@@ -86,7 +83,6 @@ interface AppShellProps {
   onTextChannelActivate(): void;
   onCreateGroup(): void;
   onVoiceChannelActivate(): void;
-  onDismissCallPanel(): void;
 }
 
 function ParticipantLine({
@@ -558,7 +554,7 @@ export function AppShell(props: AppShellProps) {
           }}
         />
       )}
-      {mobileLayout && props.showCallPanel && props.activeView !== 'call' && (
+      {mobileLayout && props.activeView !== 'call' && (
         <div className="mobile-voice-bar" aria-label="Controles de voz">
           <>
             <IconButton
@@ -566,6 +562,7 @@ export function AppShell(props: AppShellProps) {
               className={props.voice.muted ? 'is-active' : ''}
               aria-pressed={props.voice.muted}
               onClick={props.voice.toggleMuted}
+              disabled={props.voice.status === 'idle'}
             >
               {props.voice.muted ? (
                 <MicOffIcon aria-hidden="true" />
@@ -578,6 +575,7 @@ export function AppShell(props: AppShellProps) {
               className={props.voice.deafened ? 'is-active' : ''}
               aria-pressed={props.voice.deafened}
               onClick={props.voice.toggleDeafened}
+              disabled={props.voice.status === 'idle'}
             >
               {props.voice.deafened ? (
                 <HeadphonesOffIcon aria-hidden="true" />
@@ -591,7 +589,10 @@ export function AppShell(props: AppShellProps) {
                 className={props.voice.cameraState === 'active' ? 'is-active' : ''}
                 aria-pressed={props.voice.cameraState === 'active'}
                 onClick={props.voice.toggleCamera}
-                disabled={!['idle', 'active', 'error'].includes(props.voice.cameraState)}
+                disabled={
+                  props.voice.status !== 'connected' ||
+                  !['idle', 'active', 'error'].includes(props.voice.cameraState)
+                }
               >
                 {props.voice.cameraState === 'active' ? (
                   <CameraOffIcon aria-hidden="true" />
@@ -621,7 +622,10 @@ export function AppShell(props: AppShellProps) {
                 className={props.voice.screenState === 'active' ? 'is-active' : ''}
                 aria-pressed={props.voice.screenState === 'active'}
                 onClick={props.voice.toggleScreenShare}
-                disabled={!['idle', 'active', 'error'].includes(props.voice.screenState)}
+                disabled={
+                  props.voice.status !== 'connected' ||
+                  !['idle', 'active', 'error'].includes(props.voice.screenState)
+                }
               >
                 {props.voice.screenState === 'active' ? (
                   <ScreenShareOffIcon aria-hidden="true" />
@@ -630,24 +634,12 @@ export function AppShell(props: AppShellProps) {
                 )}
               </IconButton>
             )}
-            <IconButton label="Desconectar" tone="danger" onClick={props.voice.leave}>
-              <ExitIcon aria-hidden="true" />
-            </IconButton>
-          </>
-          <IconButton label="Ocultar controles da chamada" onClick={props.onDismissCallPanel}>
-            <CloseIcon aria-hidden="true" />
-          </IconButton>
-          <IconButton
-            label={props.membersOpen ? 'Ocultar membros' : 'Exibir membros'}
-            aria-expanded={props.membersOpen}
-            onClick={() => props.onMembersOpenChange(!props.membersOpen)}
-          >
-            {props.membersOpen ? (
-              <PanelRightCloseIcon aria-hidden="true" />
-            ) : (
-              <PanelRightOpenIcon aria-hidden="true" />
+            {props.voice.status !== 'idle' && (
+              <IconButton label="Desconectar" tone="danger" onClick={props.voice.leave}>
+                <ExitIcon aria-hidden="true" />
+              </IconButton>
             )}
-          </IconButton>
+          </>
         </div>
       )}
     </div>

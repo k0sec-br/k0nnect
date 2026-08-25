@@ -1698,7 +1698,10 @@
 @media (max-width: 767px) {
   .app-shell {
     display: block;
+    height: 100dvh;
+    min-height: 0;
     padding-left: 4.5rem;
+    overflow: hidden;
   }
   .group-rail {
     position: fixed;
@@ -1727,9 +1730,11 @@
   }
   .app-main {
     height: 100dvh;
+    min-height: 0;
     width: calc(100vw - 4.5rem);
     margin-left: 0;
-    padding-bottom: 3.75rem;
+    overflow: hidden;
+    padding-bottom: 4.25rem;
   }
   .drawer-backdrop {
     left: 4.5rem;
@@ -1773,8 +1778,8 @@
     min-height: 3.75rem;
     align-items: center;
     justify-content: center;
-    gap: 0.65rem;
-    padding: 0.45rem 0.7rem;
+    gap: clamp(0.25rem, 1.5vw, 0.65rem);
+    padding: 0.45rem clamp(0.4rem, 2vw, 0.7rem);
     border-top: 1px solid var(--border-default);
     background: var(--surface-rail);
   }
@@ -1783,8 +1788,8 @@
     max-width: 18rem;
   }
   .mobile-voice-bar .icon-button {
-    width: 2.75rem;
-    height: 2.75rem;
+    width: clamp(2.35rem, 11vw, 2.75rem);
+    height: clamp(2.35rem, 11vw, 2.75rem);
   }
   .mobile-voice-bar .camera-switch-button {
     width: 2.75rem;
