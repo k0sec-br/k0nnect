@@ -120,7 +120,7 @@ export function useVoiceSession({
   const [recoveryAttempts, setRecoveryAttempts] = useState(0);
   const [lastRecoveryReason, setLastRecoveryReason] = useState('');
   const [reconciliationNeeded, setReconciliationNeeded] = useState(false);
-  const [callConflict, setCallConflict] = useState(false);
+  const [callConflictChannelId, setCallConflictChannelId] = useState<string | null>(null);
   const [subscriptionRetryVersion, setSubscriptionRetryVersion] = useState(0);
   statusRef.current = status;
 
@@ -283,7 +283,7 @@ export function useVoiceSession({
       statusRef.current = 'joining';
       setStatus('joining');
       setError('');
-      setCallConflict(false);
+      setCallConflictChannelId(null);
       try {
         await joinCall(targetRoomId, takeover);
         const started = await startClient(connectionId, false, undefined, targetRoomId);
@@ -300,7 +300,11 @@ export function useVoiceSession({
         joinInFlightRef.current = false;
         statusRef.current = 'idle';
         setStatus('idle');
-        setCallConflict(caught instanceof CallConflictError);
+        if (caught instanceof CallConflictError) {
+          setCallConflictChannelId(caught.channelId);
+          setError('');
+          return;
+        }
         setError(caught instanceof Error ? caught.message : 'Não foi possível entrar na chamada.');
       }
     },
@@ -319,7 +323,7 @@ export function useVoiceSession({
     setRecoveryAttempts(0);
     setLastRecoveryReason('');
     setReconciliationNeeded(false);
-    setCallConflict(false);
+    setCallConflictChannelId(null);
     detectorCleanupRef.current?.();
     detectorCleanupRef.current = null;
     const client = clientRef.current;
@@ -1022,7 +1026,8 @@ export function useVoiceSession({
   );
 
   return {
-    callConflict,
+    callConflict: callConflictChannelId !== null,
+    callConflictChannelId,
     cameraState,
     cameras,
     changeCamera,
@@ -1047,7 +1052,7 @@ export function useVoiceSession({
     error,
     join,
     switchCall,
-    takeoverCall: () => join(true),
+    takeoverCall: () => join(true, callConflictChannelId ?? roomId),
     leave,
     localMedia,
     lastRecoveryReason,

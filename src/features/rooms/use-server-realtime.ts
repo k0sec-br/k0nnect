@@ -36,6 +36,10 @@ const RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
 
 export class CallConflictError extends Error {
   override name = 'CallConflictError';
+
+  constructor(readonly channelId: string) {
+    super('Esta conta já está em uma chamada em outro dispositivo.');
+  }
 }
 
 export function shouldReconnectServerSocket(closeCode: number): boolean {
@@ -243,7 +247,7 @@ export function useServerRealtime(
           if (realtimeMessage.type === 'call.conflict') {
             settleCommand(
               realtimeMessage.payload.requestId,
-              new CallConflictError('Esta conta já está em uma chamada em outro dispositivo.'),
+              new CallConflictError(realtimeMessage.payload.channelId),
             );
             return;
           }

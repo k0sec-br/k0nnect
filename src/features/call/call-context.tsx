@@ -168,6 +168,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const switchVoiceCall = voice.switchCall;
 
   useEffect(() => {
+    if (!voice.callConflictChannelId) return;
+    const conflictingConversation = bootstrap?.conversations.find(
+      (conversation) => conversation.callRoomId === voice.callConflictChannelId,
+    );
+    if (!conflictingConversation) return;
+    setCallConversationId(conflictingConversation.id);
+  }, [bootstrap?.conversations, voice.callConflictChannelId]);
+
+  useEffect(() => {
     if (!bootstrap || !user) return;
     callResumeRef.current = loadCallResumeState(bootstrap.server.id, user.id);
     resumedCallRef.current = false;
