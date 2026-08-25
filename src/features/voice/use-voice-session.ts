@@ -42,6 +42,16 @@ export function subscriptionRetryDelayMs(attempt: number): number {
   ]!;
 }
 
+export function isExpectedMediaEnd(reason: MediaEndReason): boolean {
+  return [
+    'user_stop',
+    'track_ended',
+    'publisher_left',
+    'publication_replaced',
+    'session_rebuilt',
+  ].includes(reason);
+}
+
 function isRetryableConnectionError(error: unknown): boolean {
   if (!(error instanceof DOMException)) return true;
   return !['NotAllowedError', 'NotFoundError', 'NotReadableError', 'SecurityError'].includes(error.name);
@@ -324,6 +334,7 @@ export function useVoiceSession({
     setLastRecoveryReason('');
     setReconciliationNeeded(false);
     setCallConflictChannelId(null);
+    setError('');
     detectorCleanupRef.current?.();
     detectorCleanupRef.current = null;
     const client = clientRef.current;
@@ -649,7 +660,7 @@ export function useVoiceSession({
         pendingPublicationClosuresRef.current.set(publicationId, reason);
         setReconciliationNeeded(true);
       }
-      if (reason !== 'user_stop') {
+      if (!isExpectedMediaEnd(reason)) {
         setError('O compartilhamento de tela foi interrompido.');
       }
     } finally {
@@ -995,7 +1006,6 @@ export function useVoiceSession({
               screenWantedRef.current = false;
               screenShareManagerRef.current?.stop();
               setScreenState('idle');
-              setError('O compartilhamento de tela foi interrompido.');
             }
           } else {
             screenWantedRef.current = false;
@@ -1008,7 +1018,6 @@ export function useVoiceSession({
                   item.publication.source !== 'screen-audio',
               ),
             );
-            setError('O compartilhamento de tela foi interrompido.');
           }
         }
 

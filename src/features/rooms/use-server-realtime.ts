@@ -258,7 +258,6 @@ export function useServerRealtime(
             setPublications((current) =>
               current.filter((publication) => publication.userId !== userId),
             );
-            setMessage('A chamada foi transferida para outra sessão desta conta.');
             setCallReplacementCount((current) => current + 1);
             return;
           }

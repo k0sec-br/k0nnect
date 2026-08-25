@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { mediaErrorMessage } from '../../src/features/voice/media-errors';
 import { NegotiationQueue } from '../../src/features/voice/negotiation-queue';
-import { subscriptionRetryDelayMs } from '../../src/features/voice/use-voice-session';
+import {
+  isExpectedMediaEnd,
+  subscriptionRetryDelayMs,
+} from '../../src/features/voice/use-voice-session';
 import { realtimeSessionRequestSchema } from '../../shared/schemas/realtime';
+import type { MediaEndReason } from '../../shared/protocol/room';
 import { findAudioTransceiverMid } from '../../worker/realtime/sdp';
 
 describe('camada de mídia', () => {
@@ -94,4 +98,24 @@ describe('camada de mídia', () => {
     expect(subscriptionRetryDelayMs(2)).toBe(2_000);
     expect(subscriptionRetryDelayMs(99)).toBe(8_000);
   });
+
+  it.each([
+    'user_stop',
+    'track_ended',
+    'publisher_left',
+    'publication_replaced',
+    'session_rebuilt',
+  ] as MediaEndReason[])(
+    'trata %s como encerramento normal de mídia',
+    (reason) => {
+      expect(isExpectedMediaEnd(reason)).toBe(true);
+    },
+  );
+
+  it.each(['device_removed', 'network_failure', 'error'] as MediaEndReason[])(
+    'mantém %s como falha de mídia',
+    (reason) => {
+      expect(isExpectedMediaEnd(reason)).toBe(false);
+    },
+  );
 });
