@@ -11,7 +11,7 @@ Os clientes instalados usam Tauri 2, Rust e os assets React produzidos localment
 - `src/core`: transporte, plataforma, deep links, notificações e preferências;
 - `src-tauri`: janela, tray, cofre de sessão, HTTP, WebSocket e integração do sistema.
 
-O desktop usa painéis simultâneos e ocupa toda a janela. O Android usa navegação hierárquica, conteúdo em tela inteira e navegação inferior para conversas, amigos, chamadas e perfil. As duas composições reutilizam os tokens de `src/styles/tokens.css`.
+O desktop usa painéis simultâneos e ocupa toda a janela. O Android usa navegação hierárquica, mantém os servidores em uma barra lateral compacta e oferece navegação inferior para conversas, amigos e perfil. Os canais abrem como painel sobre o conteúdo e as conversas ocupam a área restante. As duas composições reutilizam os tokens de `src/styles/tokens.css`.
 
 ## Inicialização e sessão
 
@@ -51,6 +51,8 @@ No Windows, o perfil WebView2 não salva senhas nem dados gerais de preenchiment
 
 Compartilhamento de tela abre o seletor seguro da plataforma a cada nova captura. A escolha da tela ou janela e os indicadores de captura permanecem sob controle do sistema; o aplicativo não seleciona uma fonte silenciosamente, não usa privilégios de administrador e não contorna decisões de privacidade.
 
+No Windows, o seletor e o aviso de compartilhamento pertencem ao WebView2. A API `ScreenCaptureStarting` permite autorizar a exibição do seletor ou cancelar a captura, mas não permite acionar automaticamente o botão de ocultar nem remover o aviso durante uma captura iniciada por `getDisplayMedia()`. Uma interface completamente controlada pelo k0nnect exige uma fonte de vídeo capturada por API nativa e integrada ao pipeline WebRTC.
+
 No Linux, o WebKitGTK habilita explicitamente WebRTC e captura de mídia antes de recarregar o contexto da aplicação, além de usar um manipulador restrito a requisições de áudio e vídeo. O microfone usa a associação padrão de track, enquanto câmera e tela usam transceivers explícitas. A publicação usa o `mid` da transceiver, o identificador equivalente da offer SDP ou a seção de mídia correspondente, conforme a disponibilidade da implementação WebRTC.
 
 A distribuição Linux precisa fornecer WebKitGTK compilado com `ENABLE_WEB_RTC=ON`, além dos plugins GStreamer, PipeWire e ICE exigidos pela implementação. A configuração `enable-webrtc` do aplicativo ativa uma implementação presente no WebKitGTK, mas não adiciona uma implementação ausente no pacote do sistema. O cliente verifica `RTCPeerConnection` antes de entrar no canal e mantém a chamada inativa quando esse requisito não está disponível.
@@ -74,13 +76,15 @@ Tokens e identificadores são validados antes de alterar a rota. Uma segunda abe
 
 ## Atualizações
 
-O updater Tauri é exclusivo do desktop e verifica, baixa, instala e reinicia sem abrir navegador. A interface informa verificação, progresso em megabytes, instalação, reinício e falha recuperável. A verificação automática é habilitada no build com:
+O updater Tauri é usado em distribuições desktop empacotadas e assinadas, nas quais pode verificar, baixar, instalar e reiniciar sem abrir navegador. A interface informa verificação, progresso em megabytes, instalação, reinício e falha recuperável. A verificação automática é habilitada no build com:
 
 ```bash
 VITE_K0NNECT_UPDATER_ENABLED=true pnpm desktop:build
 ```
 
-O build de release precisa configurar `plugins.updater.endpoints` e `plugins.updater.pubkey` em `src-tauri/tauri.conf.json` ou em um arquivo de configuração mesclado. A chave pública pode ser versionada; a chave privada de assinatura fica somente no secret store da CI. O manifesto publicado deve referenciar artefatos assinados gerados por `bundle.createUpdaterArtifacts`.
+O build de release empacotado precisa configurar `plugins.updater.endpoints` e `plugins.updater.pubkey` em `src-tauri/tauri.conf.json` ou em um arquivo de configuração mesclado. A chave pública pode ser versionada; a chave privada de assinatura fica somente no secret store da CI. O manifesto publicado deve referenciar artefatos assinados gerados por `bundle.createUpdaterArtifacts`.
+
+O Windows usa distribuição portátil: `src-tauri/tauri.windows.conf.json` desabilita bundles e artefatos do updater. A atualização dessa variante substitui o executável por um artefato portátil verificado.
 
 Android recebe atualizações pelo canal de distribuição da loja. O updater desktop não é incluído na capability mobile.
 
@@ -99,13 +103,13 @@ pnpm android:build
 
 `pnpm desktop:dev` inicia o Vite em `127.0.0.1:5174` e abre a janela Tauri. Mantenha o comando em execução durante o desenvolvimento; `Ctrl+C` encerra o servidor e o aplicativo.
 
-No Fedora, a compilação cruzada do instalador NSIS para Windows usa `cargo-xwin`. O script local omite assinatura de código e artefatos assinados do updater:
+No Fedora, a compilação cruzada do executável portátil para Windows usa `cargo-xwin` e ignora a etapa de bundle:
 
 ```bash
-pnpm desktop:build:windows:local
+pnpm desktop:build:windows
 ```
 
-O executável fica em `src-tauri/target/x86_64-pc-windows-msvc/release/k0nnect.exe`. O instalador local sem assinatura fica em `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`. Builds públicas configuram a chave privada do updater somente no ambiente protegido da CI, preservam `bundle.createUpdaterArtifacts` e omitem `--no-sign`.
+O build produz somente `src-tauri/target/x86_64-pc-windows-msvc/release/k0nnect.exe`.
 
 O projeto Android fixa Java 21 para o daemon em `src-tauri/gen/android/gradle/gradle-daemon-jvm.properties`. O Gradle localiza uma instalação compatível mesmo quando o Java padrão do terminal ou da IDE é mais recente. Gere o APK ARM64 de teste para aparelhos Android físicos com:
 
@@ -117,12 +121,12 @@ Java 21 precisa estar instalado e detectável pelo Gradle. No Android Studio, a 
 
 O APK fica em `src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`. A variante `aarch64` empacota a biblioteca `arm64-v8a`; `x86_64` é destinada a emuladores compatíveis.
 
-`pnpm tauri info` lista os pré-requisitos detectados. Antes de uma release, valide login, restauração e revogação de sessão, deep links com o processo aberto e fechado, tray, notificações, permissões, updater assinado, áudio, câmera, troca de dispositivo, compartilhamento de tela, suspensão e reconexão em dispositivos reais.
+`pnpm tauri info` lista os pré-requisitos detectados. Antes de uma release, valide login, restauração e revogação de sessão, deep links com o processo aberto e fechado, tray, notificações, permissões, atualização aplicável ao canal de distribuição, áudio, câmera, troca de dispositivo, compartilhamento de tela, suspensão e reconexão em dispositivos reais.
 
 ## Segurança de release
 
 - não coloque senha, token de sessão, chave privada, Turnstile secret ou credencial Cloudflare em arquivos do aplicativo;
-- assine instaladores e atualizações na CI protegida;
+- assine binários e artefatos de atualização na CI protegida;
 - restrinja a publicação de artefatos a tags revisadas;
 - revise capabilities Tauri e permissões Android a cada plugin;
 - teste a política CSP empacotada;
