@@ -47,6 +47,8 @@ Microfone é solicitado ao entrar em voz e câmera ao ativar o respectivo contro
 
 No Windows e no Linux, o host autoriza internamente pedidos de microfone e câmera feitos pela origem local do aplicativo. Essa autorização não é concedida ao site público nem a conteúdo remoto. No Android, o diálogo do k0nnect antecede a permissão de runtime obrigatória do sistema. Depois de concedida, a decisão persiste conforme as regras do Android e pode ser revogada nas configurações do aparelho.
 
+No Windows, o perfil WebView2 não salva senhas nem dados gerais de preenchimento automático. Dados dessa natureza presentes no perfil são apagados na inicialização. A sessão autenticada continua no cofre nativo do sistema e não depende do gerenciador de credenciais do navegador. O Android mantém integração com o autofill e os gerenciadores de senha da plataforma.
+
 Compartilhamento de tela abre o seletor seguro da plataforma a cada nova captura. A escolha da tela ou janela e os indicadores de captura permanecem sob controle do sistema; o aplicativo não seleciona uma fonte silenciosamente, não usa privilégios de administrador e não contorna decisões de privacidade.
 
 No Linux, o WebKitGTK habilita explicitamente WebRTC e captura de mídia antes de recarregar o contexto da aplicação, além de usar um manipulador restrito a requisições de áudio e vídeo. O microfone usa a associação padrão de track, enquanto câmera e tela usam transceivers explícitas. A publicação usa o `mid` da transceiver, o identificador equivalente da offer SDP ou a seção de mídia correspondente, conforme a disponibilidade da implementação WebRTC.

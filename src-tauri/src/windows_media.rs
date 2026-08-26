@@ -1,7 +1,7 @@
 use tauri::{App, Manager};
 use webview2_com::{
-    take_pwstr, Microsoft::Web::WebView2::Win32::*, PermissionRequestedEventHandler,
-    SetPermissionStateCompletedHandler,
+    take_pwstr, ClearBrowsingDataCompletedHandler, Microsoft::Web::WebView2::Win32::*,
+    PermissionRequestedEventHandler, SetPermissionStateCompletedHandler,
 };
 use windows::core::{Interface, HSTRING};
 
@@ -41,6 +41,34 @@ unsafe fn persist_application_permissions(core_webview: &ICoreWebView2) {
     }
 }
 
+unsafe fn disable_browser_credentials(core_webview: &ICoreWebView2) {
+    if let Ok(settings) = core_webview.Settings() {
+        if let Ok(autofill_settings) = settings.cast::<ICoreWebView2Settings4>() {
+            let _ = autofill_settings.SetIsPasswordAutosaveEnabled(false);
+            let _ = autofill_settings.SetIsGeneralAutofillEnabled(false);
+        }
+    }
+
+    let Ok(versioned_webview) = core_webview.cast::<ICoreWebView2_13>() else {
+        return;
+    };
+    let Ok(profile) = versioned_webview.Profile() else {
+        return;
+    };
+    if let Ok(autofill_profile) = profile.cast::<ICoreWebView2Profile6>() {
+        let _ = autofill_profile.SetIsPasswordAutosaveEnabled(false);
+        let _ = autofill_profile.SetIsGeneralAutofillEnabled(false);
+    }
+    if let Ok(browsing_data_profile) = profile.cast::<ICoreWebView2Profile2>() {
+        let credential_data = COREWEBVIEW2_BROWSING_DATA_KINDS(
+            COREWEBVIEW2_BROWSING_DATA_KINDS_PASSWORD_AUTOSAVE.0
+                | COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL.0,
+        );
+        let completion_handler = ClearBrowsingDataCompletedHandler::create(Box::new(|_| Ok(())));
+        let _ = browsing_data_profile.ClearBrowsingData(credential_data, &completion_handler);
+    }
+}
+
 pub fn configure(app: &App) -> tauri::Result<()> {
     let webview = app
         .get_webview_window("main")
@@ -50,6 +78,7 @@ pub fn configure(app: &App) -> tauri::Result<()> {
         let Ok(core_webview) = platform_webview.controller().CoreWebView2() else {
             return;
         };
+        disable_browser_credentials(&core_webview);
         persist_application_permissions(&core_webview);
         let mut registration_token = 0;
         let permission_handler = PermissionRequestedEventHandler::create(Box::new(|_, args| {
