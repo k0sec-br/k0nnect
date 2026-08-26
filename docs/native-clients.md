@@ -101,6 +101,16 @@ pnpm desktop:build:windows:local
 
 O executável fica em `src-tauri/target/x86_64-pc-windows-msvc/release/k0nnect.exe`. O instalador local sem assinatura fica em `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`. Builds públicas configuram a chave privada do updater somente no ambiente protegido da CI, preservam `bundle.createUpdaterArtifacts` e omitem `--no-sign`.
 
+No Fedora, gere o APK ARM64 de teste com Java 21 para aparelhos Android físicos:
+
+```bash
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
+PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH \
+pnpm android:build --debug --target aarch64 --apk
+```
+
+O APK fica em `src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`. A variante `aarch64` empacota a biblioteca `arm64-v8a`; `x86_64` é destinada a emuladores compatíveis.
+
 `pnpm tauri info` lista os pré-requisitos detectados. Antes de uma release, valide login, restauração e revogação de sessão, deep links com o processo aberto e fechado, tray, notificações, permissões, updater assinado, áudio, câmera, troca de dispositivo, compartilhamento de tela, suspensão e reconexão em dispositivos reais.
 
 ## Segurança de release
