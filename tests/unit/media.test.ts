@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+  UnsupportedVoiceMediaError,
+  VOICE_MEDIA_UNSUPPORTED_MESSAGE,
+} from '../../src/features/voice/media-capabilities';
 import { mediaErrorMessage } from '../../src/features/voice/media-errors';
 import { resolvePublicationMids } from '../../src/features/voice/media-session-manager';
 import { NegotiationQueue } from '../../src/features/voice/negotiation-queue';
@@ -12,6 +16,12 @@ import type { MediaEndReason } from '../../shared/protocol/room';
 import { findAudioTransceiverMid } from '../../worker/realtime/sdp';
 
 describe('camada de mídia', () => {
+  it('explica quando a implementação WebRTC não está disponível', () => {
+    expect(mediaErrorMessage(new UnsupportedVoiceMediaError())).toBe(
+      VOICE_MEDIA_UNSUPPORTED_MESSAGE,
+    );
+  });
+
   it.each([
     ['NotAllowedError', 'O acesso ao microfone foi bloqueado'],
     ['NotFoundError', 'Não encontramos um microfone disponível'],

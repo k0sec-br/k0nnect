@@ -6,6 +6,7 @@ describe('disponibilidade de voz', () => {
   const base = {
     connectionId: null,
     connectionState: 'connecting' as const,
+    mediaSupported: true,
     realtimeEnabled: true,
     roomAvailable: true,
   };
@@ -28,6 +29,13 @@ describe('disponibilidade de voz', () => {
     expect(voiceAvailability({ ...base, realtimeEnabled: false })).toEqual({
       canJoin: false,
       message: 'Voz indisponível neste ambiente.',
+    });
+  });
+
+  it('bloqueia a entrada quando o componente do sistema não oferece WebRTC', () => {
+    expect(voiceAvailability({ ...base, mediaSupported: false })).toEqual({
+      canJoin: false,
+      message: 'WebRTC indisponível neste sistema.',
     });
   });
 });

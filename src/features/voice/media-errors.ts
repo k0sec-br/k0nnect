@@ -1,9 +1,11 @@
 import { isTauriApp } from '../../core/platform/app-platform';
+import { UnsupportedVoiceMediaError, VOICE_MEDIA_UNSUPPORTED_MESSAGE } from './media-capabilities';
 
 export function mediaErrorMessage(
   error: unknown,
   mediaLabel: 'microfone' | 'câmera' | 'compartilhamento' = 'microfone',
 ): string {
+  if (error instanceof UnsupportedVoiceMediaError) return VOICE_MEDIA_UNSUPPORTED_MESSAGE;
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
       const permissionLocation = isTauriApp()

@@ -45,9 +45,11 @@ Uma entrada inicial que não consegue publicar mídia retorna ao estado inativo 
 
 Microfone é solicitado ao entrar em voz e câmera ao ativar o respectivo controle. Compartilhamento de tela abre o seletor seguro da plataforma a cada compartilhamento. O aplicativo não salva nem contorna decisões de privacidade do sistema operacional.
 
-No Linux, o WebKitGTK recebe explicitamente a habilitação de mídia e o manipulador restrito a requisições de áudio e vídeo. O microfone usa a associação padrão de track, enquanto câmera e tela usam transceivers explícitas. A publicação usa o `mid` da transceiver, o identificador equivalente da offer SDP ou a seção de mídia correspondente, conforme a disponibilidade da implementação WebRTC. Os pacotes RPM incluem dependências de PipeWire e libnice; os pacotes Debian declaram os equivalentes. O AppImage reúne as dependências de mídia distribuídas com o aplicativo.
+No Linux, o WebKitGTK habilita explicitamente WebRTC e captura de mídia antes de recarregar o contexto da aplicação, além de usar um manipulador restrito a requisições de áudio e vídeo. O microfone usa a associação padrão de track, enquanto câmera e tela usam transceivers explícitas. A publicação usa o `mid` da transceiver, o identificador equivalente da offer SDP ou a seção de mídia correspondente, conforme a disponibilidade da implementação WebRTC.
 
-Para desenvolvimento no Fedora, instale o elemento WebRTC do GStreamer com `sudo dnf install -y libnice-gstreamer1`.
+A distribuição Linux precisa fornecer WebKitGTK compilado com `ENABLE_WEB_RTC=ON`, além dos plugins GStreamer, PipeWire e ICE exigidos pela implementação. A configuração `enable-webrtc` do aplicativo ativa uma implementação presente no WebKitGTK, mas não adiciona uma implementação ausente no pacote do sistema. O cliente verifica `RTCPeerConnection` antes de entrar no canal e mantém a chamada inativa quando esse requisito não está disponível.
+
+Para desenvolvimento em uma distribuição com WebRTC habilitado no WebKitGTK, confirme também a presença do elemento ICE com `gst-inspect-1.0 nice`.
 
 Se o WebKit relatar falha ao abrir o remote do PipeWire, confirme os serviços da sessão com `systemctl --user status pipewire pipewire-pulse wireplumber`. Para restaurar a sessão de mídia, execute `systemctl --user restart wireplumber pipewire pipewire-pulse`, aguarde os três serviços ficarem ativos e reinicie o cliente.
 

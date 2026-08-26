@@ -1,5 +1,6 @@
 import type { MediaEndReason, MediaPublication, MediaSource } from '../../../shared/protocol/room';
 import { apiClient } from '../../lib/api-client';
+import { assertVoiceMediaSupport } from './media-capabilities';
 import { NegotiationQueue } from './negotiation-queue';
 
 interface PublishResponse {
@@ -56,8 +57,8 @@ function mediaSectionsFromSdp(sdp: string): OfferMediaSection[] {
   const sections: OfferMediaSection[] = [];
   for (const mediaSection of sdp.split(/\r?\nm=/u).slice(1)) {
     const kind = mediaSection.split(/\s/u, 1)[0];
-    const mid = mediaSection.match(/(?:^|\r?\n)a=mid:([^\r\n]+)/u)?.[1]?.trim();
-    const trackId = mediaSection.match(/(?:^|\r?\n)a=msid:\S+\s+(\S+)/u)?.[1];
+    const mid = /(?:^|\r?\n)a=mid:([^\r\n]+)/u.exec(mediaSection)?.[1]?.trim();
+    const trackId = /(?:^|\r?\n)a=msid:\S+\s+(\S+)/u.exec(mediaSection)?.[1];
     if ((kind === 'audio' || kind === 'video') && mid) {
       sections.push(trackId ? { kind, mid, trackId } : { kind, mid });
     }
@@ -112,6 +113,7 @@ export class MediaSessionManager {
   ) {}
 
   async start(deviceId?: string, existingMicrophone?: MediaStreamTrack): Promise<MediaStreamTrack> {
+    assertVoiceMediaSupport();
     const stream = existingMicrophone
       ? new MediaStream([existingMicrophone])
       : await navigator.mediaDevices.getUserMedia({

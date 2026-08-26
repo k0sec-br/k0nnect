@@ -4,11 +4,13 @@ export type VoiceAvailability =
 export function voiceAvailability({
   connectionId,
   connectionState,
+  mediaSupported,
   realtimeEnabled,
   roomAvailable,
 }: {
   connectionId: string | null;
   connectionState: 'connected' | 'connecting' | 'disconnected' | 'offline' | 'reconnecting';
+  mediaSupported: boolean;
   realtimeEnabled: boolean | undefined;
   roomAvailable: boolean;
 }): VoiceAvailability {
@@ -17,6 +19,9 @@ export function voiceAvailability({
   }
   if (!realtimeEnabled) {
     return { canJoin: false, message: 'Voz indisponível neste ambiente.' };
+  }
+  if (!mediaSupported) {
+    return { canJoin: false, message: 'WebRTC indisponível neste sistema.' };
   }
   if (!roomAvailable) {
     return { canJoin: false, message: 'Este espaço não possui um canal de voz.' };

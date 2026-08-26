@@ -11,6 +11,7 @@ pub fn configure(app: &App) -> tauri::Result<()> {
     webview.with_webview(|platform_webview| {
         let webview = platform_webview.inner();
         if let Some(settings) = webview.settings() {
+            settings.set_enable_webrtc(true);
             settings.set_enable_media_stream(true);
         }
         webview.connect_permission_request(|_, request| {
@@ -20,5 +21,6 @@ pub fn configure(app: &App) -> tauri::Result<()> {
             }
             false
         });
+        webview.reload();
     })
 }

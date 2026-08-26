@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { MediaEndReason, MediaPublication } from '../../../shared/protocol/room';
 import { CallConflictError } from '../rooms/use-server-realtime';
+import { supportsVoiceMedia, VOICE_MEDIA_UNSUPPORTED_MESSAGE } from './media-capabilities';
 import { mediaDevicePreferences } from './media-device-preferences';
 import { CameraManager, ScreenShareManager } from './media-capture-managers';
 import { mediaErrorMessage } from './media-errors';
@@ -37,9 +38,7 @@ export interface MediaStreamView {
 const SUBSCRIPTION_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000];
 
 export function subscriptionRetryDelayMs(attempt: number): number {
-  return SUBSCRIPTION_RETRY_DELAYS_MS[
-    Math.min(attempt, SUBSCRIPTION_RETRY_DELAYS_MS.length - 1)
-  ]!;
+  return SUBSCRIPTION_RETRY_DELAYS_MS[Math.min(attempt, SUBSCRIPTION_RETRY_DELAYS_MS.length - 1)]!;
 }
 
 export function isExpectedMediaEnd(reason: MediaEndReason): boolean {
@@ -100,7 +99,9 @@ export function useVoiceSession({
   const recoveryOperationRef = useRef<Promise<boolean> | null>(null);
   const pendingPublicationClosuresRef = useRef(new Map<string, MediaEndReason>());
   const sessionGenerationRef = useRef(0);
-  const statusRef = useRef<'connected' | 'idle' | 'joining' | 'reconnecting' | 'recovering'>('idle');
+  const statusRef = useRef<'connected' | 'idle' | 'joining' | 'reconnecting' | 'recovering'>(
+    'idle',
+  );
   const subscriptionRetryAttemptRef = useRef(0);
   const subscriptionRetryTimerRef = useRef<number | null>(null);
 
@@ -279,6 +280,10 @@ export function useVoiceSession({
   const join = useCallback(
     async (takeover = false, targetRoomId = roomId) => {
       if (!connectionId || statusRef.current !== 'idle' || joinInFlightRef.current) return;
+      if (!supportsVoiceMedia()) {
+        setError(VOICE_MEDIA_UNSUPPORTED_MESSAGE);
+        return;
+      }
       joinInFlightRef.current = true;
       userRequestedDisconnectRef.current = false;
       sessionGenerationRef.current += 1;

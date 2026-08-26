@@ -6,6 +6,7 @@ import { AppShell } from '../components/app-shell';
 import { CallStage, type CallStageControls } from '../components/call-stage';
 import { CallView } from '../components/call-view';
 import { FloatingMediaDock } from '../components/floating-media-dock';
+import { supportsVoiceMedia } from '../features/voice/media-capabilities';
 import { voiceAvailability } from '../features/voice/voice-availability';
 import { FormMessage } from '../components/form-message';
 import { RemoteAudio } from '../components/remote-audio';
@@ -120,6 +121,7 @@ export function AppPage({ nativePlatform }: { nativePlatform?: Exclude<AppPlatfo
   const communityVoiceAvailability = voiceAvailability({
     connectionId: socket.connectionId,
     connectionState: socket.connectionState,
+    mediaSupported: supportsVoiceMedia(),
     realtimeEnabled: config?.realtimeEnabled,
     roomAvailable: Boolean(room),
   });
