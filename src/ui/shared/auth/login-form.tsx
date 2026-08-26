@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { AsyncButton } from '../../../components/async-button';
+import { EyeIcon, EyeOffIcon } from '../../../components/icons';
 import { FormMessage } from '../../../components/form-message';
 import { TurnstileChallenge } from '../../../components/turnstile-challenge';
 import { useAuth } from '../../../features/auth/auth-context';
@@ -126,9 +127,11 @@ export function LoginForm({
             type="button"
             aria-label={passwordVisible ? 'Ocultar caracteres' : 'Exibir caracteres'}
             aria-pressed={passwordVisible}
+            title={passwordVisible ? 'Ocultar senha' : 'Mostrar senha'}
+            disabled={loading}
             onClick={() => setPasswordVisible((visible) => !visible)}
           >
-            {passwordVisible ? 'Ocultar' : 'Mostrar'}
+            {passwordVisible ? <EyeOffIcon aria-hidden="true" /> : <EyeIcon aria-hidden="true" />}
           </button>
         </div>
         {challengeRequired && config?.turnstileSiteKey && (
