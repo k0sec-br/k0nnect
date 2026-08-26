@@ -8,6 +8,11 @@ use serde_json::Value;
 use std::sync::Arc;
 use tauri::State;
 
+#[cfg(not(target_os = "android"))]
+use keyring::Entry as CredentialEntry;
+#[cfg(target_os = "android")]
+use keyring_core::Entry as CredentialEntry;
+
 const API_ORIGIN: &str = "https://connect.k0sec.org";
 const SESSION_COOKIE_NAME: &str = "__Host-k0nnect_session";
 const CREDENTIAL_SERVICE: &str = "org.k0sec.k0nnect";
@@ -66,10 +71,10 @@ pub struct NativeApiClient {
 
 impl NativeApiClient {
     pub fn new() -> Result<Self, String> {
-        keyring::cli::use_native_store(true).map_err(|_| "cofre seguro indisponível")?;
+        configure_credential_store()?;
         let origin = Url::parse(API_ORIGIN).map_err(|_| "origem da API inválida")?;
         let cookie_jar = Arc::new(Jar::default());
-        if let Ok(entry) = keyring::Entry::new(CREDENTIAL_SERVICE, CREDENTIAL_USER) {
+        if let Ok(entry) = CredentialEntry::new(CREDENTIAL_SERVICE, CREDENTIAL_USER) {
             if let Ok(session_token) = entry.get_password() {
                 if valid_session_token(&session_token) {
                     cookie_jar.add_cookie_str(
@@ -109,7 +114,7 @@ impl NativeApiClient {
                         .then(|| value.to_owned())
                 })
             });
-        let Ok(entry) = keyring::Entry::new(CREDENTIAL_SERVICE, CREDENTIAL_USER) else {
+        let Ok(entry) = CredentialEntry::new(CREDENTIAL_SERVICE, CREDENTIAL_USER) else {
             return;
         };
         if let Some(token) = session_token {
@@ -118,6 +123,19 @@ impl NativeApiClient {
             let _ = entry.delete_credential();
         }
     }
+}
+
+#[cfg(target_os = "android")]
+fn configure_credential_store() -> Result<(), String> {
+    keyring::cli::use_native_store(true).map_err(|_| "cofre seguro indisponível".to_owned())
+}
+
+#[cfg(not(target_os = "android"))]
+fn configure_credential_store() -> Result<(), String> {
+    CredentialEntry::store_status()
+        .as_ref()
+        .map(|_| ())
+        .map_err(|_| "cofre seguro indisponível".to_owned())
 }
 
 fn valid_session_token(value: &str) -> bool {

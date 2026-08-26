@@ -93,6 +93,14 @@ pnpm android:build
 
 `pnpm desktop:dev` inicia o Vite em `127.0.0.1:5174` e abre a janela Tauri. Mantenha o comando em execução durante o desenvolvimento; `Ctrl+C` encerra o servidor e o aplicativo.
 
+No Fedora, a compilação cruzada do instalador NSIS para Windows usa `cargo-xwin`. O script local omite assinatura de código e artefatos assinados do updater:
+
+```bash
+pnpm desktop:build:windows:local
+```
+
+O executável fica em `src-tauri/target/x86_64-pc-windows-msvc/release/k0nnect.exe`. O instalador local sem assinatura fica em `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`. Builds públicas configuram a chave privada do updater somente no ambiente protegido da CI, preservam `bundle.createUpdaterArtifacts` e omitem `--no-sign`.
+
 `pnpm tauri info` lista os pré-requisitos detectados. Antes de uma release, valide login, restauração e revogação de sessão, deep links com o processo aberto e fechado, tray, notificações, permissões, updater assinado, áudio, câmera, troca de dispositivo, compartilhamento de tela, suspensão e reconexão em dispositivos reais.
 
 ## Segurança de release

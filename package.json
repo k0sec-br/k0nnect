@@ -13,6 +13,7 @@
     "desktop:frontend": "vite --host 127.0.0.1 --port 5174 --strictPort",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
+    "desktop:build:windows:local": "tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-sign --config src-tauri/tauri.local.conf.json",
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build",
