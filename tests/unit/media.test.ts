@@ -123,6 +123,16 @@ describe('camada de mídia', () => {
     ).toEqual(['audio-0']);
   });
 
+  it('prioriza o mid associado pelo transceiver quando ele está disponível', () => {
+    expect(
+      resolvePublicationMids(
+        [{ track: { id: 'microphone-track', kind: 'audio' } }],
+        [{ mid: 'audio-native' }],
+        'v=0',
+      ),
+    ).toEqual(['audio-native']);
+  });
+
   it('limita a espera para uma nova inscrição de mídia', () => {
     expect(subscriptionRetryDelayMs(0)).toBe(500);
     expect(subscriptionRetryDelayMs(2)).toBe(2_000);

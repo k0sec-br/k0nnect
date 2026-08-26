@@ -96,6 +96,21 @@ export function resolvePublicationMids(
   });
 }
 
+function addMicrophoneTrack(
+  peerConnection: RTCPeerConnection,
+  track: MediaStreamTrack,
+  stream: MediaStream,
+): RTCRtpTransceiver {
+  const sender = peerConnection.addTrack(track, stream);
+  const transceiver = peerConnection
+    .getTransceivers()
+    .find((candidate) => candidate.sender === sender);
+  if (!transceiver) {
+    throw new DOMException('Transceiver de microfone indisponível', 'InvalidStateError');
+  }
+  return transceiver;
+}
+
 export class MediaSessionManager {
   private peerConnection: RTCPeerConnection | null = null;
   private sessionId: string | null = null;
@@ -193,13 +208,14 @@ export class MediaSessionManager {
       if (tracks.some(({ source }) => this.localPublications.has(source))) {
         throw new DOMException('Esta mídia já está publicada', 'InvalidStateError');
       }
-      const transceivers = tracks.map(({ track, stream, source }) =>
-        peerConnection.addTransceiver(track, {
+      const transceivers = tracks.map(({ track, stream, source }) => {
+        if (source === 'microphone') return addMicrophoneTrack(peerConnection, track, stream);
+        return peerConnection.addTransceiver(track, {
           direction: 'sendonly',
           streams: [stream],
           ...(source === 'camera' ? { sendEncodings: VIDEO_ENCODINGS } : {}),
-        }),
-      );
+        });
+      });
       try {
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
