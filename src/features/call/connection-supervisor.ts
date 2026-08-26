@@ -50,6 +50,7 @@ interface SupervisorOptions {
 }
 
 const MAX_BACKOFF_MS = 30_000;
+const MAX_RECOVERY_ATTEMPTS = 6;
 
 export function recoveryBackoffMs(attempt: number, random = Math.random): number {
   const base = Math.min(250 * 2 ** Math.max(0, attempt), MAX_BACKOFF_MS);
@@ -72,6 +73,7 @@ export function deriveCallConnectionState(health: ConnectionHealth): CallConnect
 export class ConnectionSupervisor {
   private activeRecovery: Promise<void> | null = null;
   private attempt = 0;
+  private exhausted = false;
   private generation = 0;
   private health: ConnectionHealth = {
     active: false,
@@ -108,11 +110,15 @@ export class ConnectionSupervisor {
   updateHealth(next: Partial<ConnectionHealth>): void {
     this.health = { ...this.health, ...next };
     if (!this.health.active || this.userRequestedDisconnect) return;
+    if (this.exhausted) {
+      this.onStateChange('failed');
+      return;
+    }
     this.onStateChange(deriveCallConnectionState(this.health));
   }
 
   requestRecovery(reason: RecoveryReason, immediate = false): void {
-    if (!this.health.active || this.userRequestedDisconnect) return;
+    if (!this.health.active || this.exhausted || this.userRequestedDisconnect) return;
     this.pendingReason = reason;
     if (this.activeRecovery || this.timer !== null) return;
     const transient = reason === 'peer-disconnected' || reason === 'ice-disconnected';
@@ -121,6 +127,7 @@ export class ConnectionSupervisor {
 
   markHealthy(): void {
     this.attempt = 0;
+    this.exhausted = false;
     this.pendingReason = null;
     this.onStateChange(deriveCallConnectionState(this.health));
   }
@@ -145,6 +152,7 @@ export class ConnectionSupervisor {
     this.userRequestedDisconnect = false;
     this.generation += 1;
     this.attempt = 0;
+    this.exhausted = false;
     this.onStateChange(deriveCallConnectionState(this.health));
   }
 
@@ -184,9 +192,13 @@ export class ConnectionSupervisor {
       return;
     }
     this.attempt += 1;
-    if (!silentRecovery) {
-      this.onStateChange(this.attempt >= 6 ? 'failed' : 'recovering');
+    if (this.attempt >= MAX_RECOVERY_ATTEMPTS) {
+      this.exhausted = true;
+      this.pendingReason = null;
+      if (!silentRecovery) this.onStateChange('failed');
+      return;
     }
+    if (!silentRecovery) this.onStateChange('recovering');
     this.pendingReason ??= reason;
     this.scheduleRecovery(recoveryBackoffMs(this.attempt, this.random));
   }

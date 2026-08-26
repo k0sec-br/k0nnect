@@ -10,8 +10,10 @@ import { RecoveryCodesCard } from '../features/auth/recovery-codes-card';
 import { usePublicConfig } from '../hooks/use-public-config';
 import { UserFacingError } from '../lib/api-client';
 import { navigate } from '../lib/navigation';
+import type { AppPlatform } from '../core/platform/app-platform';
+import { NativeAuthLayout } from '../ui/shared/auth/native-auth-layout';
 
-export function InvitePage() {
+export function InvitePage({ nativePlatform }: { nativePlatform?: Exclude<AppPlatform, 'web'> }) {
   const { register } = useAuth();
   const config = usePublicConfig();
   const [inviteToken] = useState(consumeInviteToken);
@@ -29,10 +31,13 @@ export function InvitePage() {
   const passwordsAreValid = passwordsMatch && password.length >= 12;
 
   if (recoveryCodes) {
-    return (
-      <PublicLayout>
-        <RecoveryCodesCard codes={recoveryCodes} onContinue={() => navigate('/app')} />
-      </PublicLayout>
+    const recoveryContent = (
+      <RecoveryCodesCard codes={recoveryCodes} onContinue={() => navigate('/app')} />
+    );
+    return nativePlatform ? (
+      <NativeAuthLayout mobile={nativePlatform === 'mobile'}>{recoveryContent}</NativeAuthLayout>
+    ) : (
+      <PublicLayout>{recoveryContent}</PublicLayout>
     );
   }
 
@@ -79,110 +84,115 @@ export function InvitePage() {
     }
   };
 
-  return (
-    <PublicLayout>
-      <section className="auth-panel wide" aria-labelledby="invite-title">
-        <div className="auth-heading">
-          <p className="eyebrow">Convite válido</p>
-          <h1 id="invite-title">Você foi convidado para o k0nnect</h1>
-          <p>Precisamos apenas do essencial. Nenhum email ou telefone.</p>
-        </div>
-        <form onSubmit={(event) => void submit(event)} noValidate>
-          <div className="form-grid">
-            <div>
-              <label htmlFor="display-name">Como quer ser chamado</label>
-              <input
-                id="display-name"
-                autoComplete="nickname"
-                minLength={1}
-                maxLength={40}
-                required
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="Seu nome na comunidade"
-              />
-            </div>
-            <div>
-              <label htmlFor="new-username">Usuário</label>
-              <input
-                id="new-username"
-                autoComplete="username"
-                minLength={3}
-                maxLength={24}
-                pattern={'[A-Za-z0-9._\\-]+'}
-                required
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="seu.usuario"
-              />
-            </div>
-            <div>
-              <label htmlFor="new-password">Senha</label>
-              <input
-                id="new-password"
-                type="password"
-                autoComplete="new-password"
-                minLength={12}
-                maxLength={128}
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="No mínimo 12 caracteres"
-                aria-describedby="password-requirement"
-              />
-              <span
-                id="password-requirement"
-                className={`field-helper ${password.length >= 12 ? 'is-valid' : ''}`}
-              >
-                Mínimo de 12 caracteres
-              </span>
-            </div>
-            <div>
-              <label htmlFor="confirm-password">Repita a senha</label>
-              <input
-                id="confirm-password"
-                type="password"
-                autoComplete="new-password"
-                minLength={12}
-                maxLength={128}
-                required
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Digite a mesma senha"
-                aria-describedby="password-confirmation-feedback"
-                aria-invalid={confirmationStarted && !passwordsMatch}
-              />
-              <span
-                id="password-confirmation-feedback"
-                className={`field-helper ${passwordsAreValid ? 'is-valid' : 'is-error'}`}
-                aria-live="polite"
-              >
-                {confirmationStarted
-                  ? passwordsMatch
-                    ? passwordsAreValid
-                      ? 'Senhas iguais'
-                      : ''
-                    : 'As senhas não coincidem.'
-                  : ''}
-              </span>
-            </div>
-          </div>
-          {challengeRequired && config?.turnstileSiteKey && (
-            <TurnstileChallenge
-              siteKey={config.turnstileSiteKey}
-              action="register"
-              onToken={setTurnstileToken}
+  const registrationContent = (
+    <section className="auth-panel wide" aria-labelledby="invite-title">
+      <div className="auth-heading">
+        <p className="eyebrow">Convite válido</p>
+        <h1 id="invite-title">Você foi convidado para o k0nnect</h1>
+        <p>Precisamos apenas do essencial. Nenhum email ou telefone.</p>
+      </div>
+      <form onSubmit={(event) => void submit(event)} noValidate>
+        <div className="form-grid">
+          <div>
+            <label htmlFor="display-name">Como quer ser chamado</label>
+            <input
+              id="display-name"
+              autoComplete="nickname"
+              minLength={1}
+              maxLength={40}
+              required
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder="Seu nome na comunidade"
             />
-          )}
-          {error && <FormMessage message={error} />}
-          <AsyncButton className="button primary full" type="submit" loading={loading}>
-            Criar conta
-          </AsyncButton>
-        </form>
-        <p className="privacy-copy">
-          Seu convite fica apenas na memória desta página e já foi removido do endereço.
-        </p>
-      </section>
-    </PublicLayout>
+          </div>
+          <div>
+            <label htmlFor="new-username">Usuário</label>
+            <input
+              id="new-username"
+              autoComplete="username"
+              minLength={3}
+              maxLength={24}
+              pattern={'[A-Za-z0-9._\\-]+'}
+              required
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="seu.usuario"
+            />
+          </div>
+          <div>
+            <label htmlFor="new-password">Senha</label>
+            <input
+              id="new-password"
+              type="password"
+              autoComplete="new-password"
+              minLength={12}
+              maxLength={128}
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="No mínimo 12 caracteres"
+              aria-describedby="password-requirement"
+            />
+            <span
+              id="password-requirement"
+              className={`field-helper ${password.length >= 12 ? 'is-valid' : ''}`}
+            >
+              Mínimo de 12 caracteres
+            </span>
+          </div>
+          <div>
+            <label htmlFor="confirm-password">Repita a senha</label>
+            <input
+              id="confirm-password"
+              type="password"
+              autoComplete="new-password"
+              minLength={12}
+              maxLength={128}
+              required
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="Digite a mesma senha"
+              aria-describedby="password-confirmation-feedback"
+              aria-invalid={confirmationStarted && !passwordsMatch}
+            />
+            <span
+              id="password-confirmation-feedback"
+              className={`field-helper ${passwordsAreValid ? 'is-valid' : 'is-error'}`}
+              aria-live="polite"
+            >
+              {confirmationStarted
+                ? passwordsMatch
+                  ? passwordsAreValid
+                    ? 'Senhas iguais'
+                    : ''
+                  : 'As senhas não coincidem.'
+                : ''}
+            </span>
+          </div>
+        </div>
+        {challengeRequired && config?.turnstileSiteKey && (
+          <TurnstileChallenge
+            siteKey={config.turnstileSiteKey}
+            action="register"
+            onToken={setTurnstileToken}
+          />
+        )}
+        {error && <FormMessage message={error} />}
+        <AsyncButton className="button primary full" type="submit" loading={loading}>
+          Criar conta
+        </AsyncButton>
+      </form>
+      <p className="privacy-copy">
+        {nativePlatform
+          ? 'Seu convite fica somente na memória do aplicativo.'
+          : 'Seu convite fica apenas na memória desta página e já foi removido do endereço.'}
+      </p>
+    </section>
+  );
+  return nativePlatform ? (
+    <NativeAuthLayout mobile={nativePlatform === 'mobile'}>{registrationContent}</NativeAuthLayout>
+  ) : (
+    <PublicLayout>{registrationContent}</PublicLayout>
   );
 }

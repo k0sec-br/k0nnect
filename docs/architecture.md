@@ -24,7 +24,7 @@
                        1 WebSocket
                             │
                   ┌─────────▼─────────┐
-                  │ Client           │
+                  │ Web/Tauri client │
                   └─────────┬─────────┘
                             │
                           WebRTC
@@ -40,7 +40,7 @@ D1: identidade, amizades, conversas, mensagens e autorização persistente.
 
 - **Persistent plane:** D1 guarda contas, hashes de credenciais, sessões, convites, amizades, conversas, associações e mensagens. Presença, call, speaking e mídia ativa não produzem writes no D1.
 - **Control plane:** o Worker autentica e autoriza a conexão. Um `ServerRealtime` mantém presença, entrega de chat, capacidades sociais, participantes, call leases, estado de mute/deafen e o registro efêmero de publicações. O navegador mantém um WebSocket hibernável por aba.
-- **Media plane:** o navegador negocia uma única `RTCPeerConnection` com o Cloudflare Realtime SFU durante a call. Microfone, câmera, tela e áudio da tela usam tracks independentes na mesma sessão. Secrets e chamadas privilegiadas permanecem no Worker.
+- **Media plane:** o cliente negocia uma única `RTCPeerConnection` com o Cloudflare Realtime SFU durante a call. Microfone, câmera, tela e áudio da tela usam tracks independentes na mesma sessão. Secrets e chamadas privilegiadas permanecem no Worker.
 
 ## Bootstrap e estado realtime
 
@@ -68,8 +68,8 @@ Publicações e subscriptions aceitam batches. Vídeo e áudio de uma tela compa
 
 ## Fronteiras de segurança
 
-O navegador recebe cookie opaco HttpOnly e token CSRF em memória. Mutações HTTP atravessam Origin, CSRF, schema, autorização e rate limit. O upgrade WebSocket valida sessão, Origin, servidor e limites antes de injetar identidade em headers internos ao Durable Object. Mensagens do cliente não aceitam `userId`, role, nomes de tracks do SFU ou secrets.
+O navegador recebe cookie opaco HttpOnly e token CSRF em memória. O cliente Tauri mantém o mesmo cookie fora do JavaScript por um bridge Rust e persiste seu valor no cofre de credenciais do sistema. Em ambos os casos, o token CSRF permanece somente em memória. Mutações HTTP atravessam Origin, CSRF, schema, autorização e rate limit. O upgrade WebSocket valida sessão, Origin, servidor e limites antes de injetar identidade em headers internos ao Durable Object. Mensagens do cliente não aceitam `userId`, role, nomes de tracks do SFU ou secrets.
 
 D1 continua sendo a fonte de verdade para identidade, sessão, role, amizades, conversas, membros e mensagens. O `ServerRealtime` mantém estado efêmero autorizado e persiste cada envio canônico no D1. Operações SDP permanecem em HTTP porque a resposta precisa atualizar a `RTCPeerConnection` do navegador e pode ultrapassar o limite compacto do protocolo de controle.
 
-Consulte [social-chat.md](social-chat.md), [realtime.md](realtime.md), [connection-lifecycle.md](connection-lifecycle.md) e [realtime-request-budget.md](realtime-request-budget.md).
+Consulte [native-clients.md](native-clients.md), [social-chat.md](social-chat.md), [realtime.md](realtime.md), [connection-lifecycle.md](connection-lifecycle.md) e [realtime-request-budget.md](realtime-request-budget.md).

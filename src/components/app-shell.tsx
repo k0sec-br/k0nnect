@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 import type { MediaPublication, RoomParticipant } from '../../shared/protocol/room';
 import type { ConversationSummary, MemberView, SessionUser } from '../../shared/types/api';
+import type { AppPlatform } from '../core/platform/app-platform';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { handleInternalLink } from '../lib/navigation';
 import { Avatar, participantState } from './avatar';
@@ -32,6 +33,7 @@ interface VoiceControls {
   userMuted: boolean;
   deafened: boolean;
   canJoin: boolean;
+  availabilityMessage: string;
   selectedMicrophone: string;
   microphones: MediaDeviceInfo[];
   cameras: MediaDeviceInfo[];
@@ -59,6 +61,7 @@ function microphoneControlLabel(voice: VoiceControls): string {
 }
 
 interface AppShellProps {
+  nativePlatform?: Exclude<AppPlatform, 'web'>;
   children: ReactNode;
   user: SessionUser;
   roomName: string;
@@ -360,7 +363,7 @@ function ChannelSidebar({
                   <span>Voz</span>
                 </div>
                 <button
-                  className={`voice-channel voice-channel-call ${activeView === 'call' ? 'is-active' : ''}`}
+                  className={`voice-channel voice-channel-call ${activeView === 'call' ? 'is-active' : ''} ${voice.status === 'idle' && !voice.canJoin ? 'is-unavailable' : ''}`}
                   type="button"
                   aria-current={activeView === 'call' ? 'page' : undefined}
                   onClick={onVoiceChannelActivate}
@@ -369,7 +372,10 @@ function ChannelSidebar({
                   <VolumeIcon aria-hidden="true" />
                   <span className="voice-channel-copy">
                     <span>Geral</span>
-                    {voice.status === 'joining' && <small>Conectando…</small>}
+                    {voice.status === 'idle' && voice.availabilityMessage && (
+                      <small>{voice.availabilityMessage}</small>
+                    )}
+                    {voice.status === 'joining' && <small>Entrando…</small>}
                     {voice.status === 'reconnecting' && <small>Reconectando…</small>}
                     {voice.status === 'recovering' && <small>Recuperando…</small>}
                   </span>
@@ -470,7 +476,9 @@ function MemberSidebar({
 export function AppShell(props: AppShellProps) {
   const mobileLayout = useMediaQuery('(max-width: 767px)');
   return (
-    <div className={`app-shell ${props.membersOpen ? 'has-members-sidebar' : ''}`}>
+    <div
+      className={`app-shell ${props.membersOpen ? 'has-members-sidebar' : ''} ${props.nativePlatform ? `native-${props.nativePlatform}-shell` : ''}`}
+    >
       <aside className="group-rail" aria-label="Grupos">
         <button
           className={`rail-item rail-home ${props.navigationContext === 'home' ? 'is-active' : ''}`}
@@ -553,6 +561,37 @@ export function AppShell(props: AppShellProps) {
             props.onMembersOpenChange(false);
           }}
         />
+      )}
+      {props.nativePlatform === 'mobile' && (
+        <nav className="native-mobile-navigation" aria-label="Navegação principal">
+          <button
+            type="button"
+            onClick={() => {
+              props.onHomeSelect();
+              props.onChannelsOpenChange(true);
+            }}
+          >
+            Conversas
+          </button>
+          <button type="button" onClick={props.onHomeSelect}>
+            Amigos
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const community = props.conversations.find(
+                (conversation) => conversation.spaceKind === 'community',
+              );
+              if (community) props.onGroupConversationSelect(community.id);
+              props.onChannelsOpenChange(true);
+            }}
+          >
+            Chamadas
+          </button>
+          <a href="/settings" onClick={handleInternalLink}>
+            Perfil
+          </a>
+        </nav>
       )}
       {mobileLayout && props.activeView !== 'call' && (
         <div className="mobile-voice-bar" aria-label="Controles de voz">

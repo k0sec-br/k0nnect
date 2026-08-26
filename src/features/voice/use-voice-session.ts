@@ -52,11 +52,6 @@ export function isExpectedMediaEnd(reason: MediaEndReason): boolean {
   ].includes(reason);
 }
 
-function isRetryableConnectionError(error: unknown): boolean {
-  if (!(error instanceof DOMException)) return true;
-  return !['NotAllowedError', 'NotFoundError', 'NotReadableError', 'SecurityError'].includes(error.name);
-}
-
 export function useVoiceSession({
   roomId,
   connectionId,
@@ -108,7 +103,6 @@ export function useVoiceSession({
   const statusRef = useRef<'connected' | 'idle' | 'joining' | 'reconnecting' | 'recovering'>('idle');
   const subscriptionRetryAttemptRef = useRef(0);
   const subscriptionRetryTimerRef = useRef<number | null>(null);
-  const startFailureRetryableRef = useRef(false);
 
   const [status, setStatus] = useState<
     'connected' | 'idle' | 'joining' | 'reconnecting' | 'recovering'
@@ -245,7 +239,6 @@ export function useVoiceSession({
       clientRef.current = client;
       activeConnectionIdRef.current = targetConnectionId;
       try {
-        startFailureRetryableRef.current = false;
         const track = await client.start(
           selectedMicrophoneRef.current || undefined,
           existingMicrophone,
@@ -269,7 +262,6 @@ export function useVoiceSession({
         }
         return true;
       } catch (caught) {
-        startFailureRetryableRef.current = isRetryableConnectionError(caught);
         await client.stop();
         if (clientRef.current === client) clientRef.current = null;
         setStatus(recovering ? 'reconnecting' : 'idle');
@@ -299,11 +291,6 @@ export function useVoiceSession({
         const started = await startClient(connectionId, false, undefined, targetRoomId);
         if (!started) {
           joinInFlightRef.current = false;
-          if (startFailureRetryableRef.current) {
-            statusRef.current = 'reconnecting';
-            setStatus('reconnecting');
-            return;
-          }
           await leaveCall().catch(() => undefined);
         }
       } catch (caught) {

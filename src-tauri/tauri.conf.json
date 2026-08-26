@@ -1,0 +1,70 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "k0nnect",
+  "version": "0.1.0",
+  "identifier": "org.k0sec.k0nnect",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist/client"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://connect.k0sec.org wss://connect.k0sec.org https://challenges.cloudflare.com; font-src 'self'; frame-src https://connect.k0sec.org https://challenges.cloudflare.com; img-src 'self' asset: http://asset.localhost data:; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'"
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "k0nnect",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "center": true,
+        "decorations": true,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "category": "SocialNetworking",
+    "copyright": "K0Sec",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "Comunicação privada para a comunidade K0Sec",
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "depends": ["gstreamer1.0-nice", "pipewire"]
+      },
+      "rpm": {
+        "depends": ["libnice-gstreamer1", "pipewire"]
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["k0nnect"]
+      },
+      "mobile": [
+        {
+          "scheme": ["k0nnect"],
+          "appLink": false
+        }
+      ]
+    }
+  }
+}

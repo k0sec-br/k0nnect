@@ -44,6 +44,7 @@ export function useCallConnectionSupervisor({
 }) {
   const socketRef = useRef(socket);
   const voiceRef = useRef(voice);
+  const previousVoiceStatusRef = useRef(voice.status);
   socketRef.current = socket;
   voiceRef.current = voice;
   const [state, setState] = useState<CallConnectionState>('idle');
@@ -60,6 +61,12 @@ export function useCallConnectionSupervisor({
     },
   });
   const supervisor = supervisorRef.current;
+
+  useEffect(() => {
+    const previousStatus = previousVoiceStatusRef.current;
+    previousVoiceStatusRef.current = voice.status;
+    if (previousStatus === 'idle' && voice.status === 'joining') supervisor.resume();
+  }, [supervisor, voice.status]);
 
   useEffect(() => {
     supervisor.updateHealth({

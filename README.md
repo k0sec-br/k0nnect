@@ -6,14 +6,15 @@ k0nnect é uma plataforma open source, privada e _invite-only_ para conversas em
 
 ## Stack e arquitetura
 
-- React 19, TypeScript estrito e Vite no navegador;
+- React 19, TypeScript estrito e Vite nas interfaces web e nativas;
+- Tauri 2 e Rust para os clientes Windows/Linux/macOS e Android;
 - Hono em Cloudflare Workers para a API;
 - D1 para usuários, amizades, grupos, mensagens, convites e sessões;
 - Durable Objects com WebSocket Hibernation para presença e limitação de abuso;
 - Cloudflare Realtime SFU e TURN para o plano de mídia;
 - Vitest/Workers e Playwright para testes.
 
-O Worker e os Durable Objects formam o plano de controle; áudio e vídeo seguem entre o navegador e o Realtime SFU. Cada aba usa um WebSocket, e cada participante em chamada usa uma única sessão e uma única `RTCPeerConnection`. Veja [docs/architecture.md](docs/architecture.md), [docs/social.md](docs/social.md) e [docs/chat.md](docs/chat.md).
+O Worker e os Durable Objects formam o plano de controle; áudio e vídeo seguem entre o cliente e o Realtime SFU. Cada instância usa um WebSocket, e cada participante em chamada usa uma única sessão e uma única `RTCPeerConnection`. Veja [docs/architecture.md](docs/architecture.md), [docs/native-clients.md](docs/native-clients.md), [docs/social.md](docs/social.md) e [docs/chat.md](docs/chat.md).
 
 ## Desenvolvimento local
 
@@ -30,6 +31,19 @@ pnpm dev
 O último comando de convite imprime o link uma única vez. O token fica no fragmento `#`, é removido do endereço assim que a tela abre e não é enviado em requisições de navegação. O áudio permanece desabilitado localmente; autenticação, convites e presença usam workerd, D1 e um adapter de desenvolvimento isolado.
 
 Não versione `.dev.vars`. Para recriar o ambiente, remova o arquivo conscientemente e execute `pnpm setup:local` outra vez.
+
+### Cliente nativo
+
+O shell Tauri usa os assets locais gerados pelo Vite e o backend oficial em `https://connect.k0sec.org`. Depois de instalar os [pré-requisitos do Tauri](https://v2.tauri.app/start/prerequisites/):
+
+```bash
+pnpm desktop:dev
+pnpm desktop:build
+pnpm android:init
+pnpm android:dev
+```
+
+O processo de assinatura, atualização e publicação está em [docs/native-clients.md](docs/native-clients.md).
 
 ## Configuração
 

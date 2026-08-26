@@ -17,9 +17,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBound
         <main className="fatal-state">
           <div className="brand-mark">k0</div>
           <h1>Algo não saiu como esperado</h1>
-          <p>O k0nnect não conseguiu abrir esta tela. Recarregue a página para tentar novamente.</p>
+          <p>O k0nnect não conseguiu abrir esta tela. Tente carregar a interface novamente.</p>
           <button className="button primary" type="button" onClick={() => window.location.reload()}>
-            Recarregar página
+            Tentar novamente
           </button>
         </main>
       );

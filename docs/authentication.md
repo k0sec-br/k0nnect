@@ -24,7 +24,11 @@ No cadastro são gerados dez códigos de recuperação com 160 bits legíveis ca
 
 O navegador recebe `__Host-k0nnect_session`, com `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` e sem `Domain`. D1 guarda apenas o hash. A sessão expira após sete dias ociosa ou trinta dias absolutos; `last_seen_at` é atualizado no máximo a cada cinco minutos.
 
+No cliente Tauri, requisições de autenticação passam pelo bridge Rust com origem fixa em `https://connect.k0sec.org`. O cookie é consumido pelo cookie jar nativo e seu token opaco é persistido no gerenciador de credenciais do sistema; no Android, o armazenamento usa preferências criptografadas por uma chave do Android Keystore. O WebView não recebe o header `Set-Cookie`, o token da sessão ou acesso ao cofre. O bridge aceita somente `GET`, `POST` e `DELETE` em caminhos `/api/` da origem oficial.
+
 Login rotaciona a sessão atual. Logout revoga uma; logout-all revoga todas. Contas disabled não autenticam. O `ServerRealtime` recebe revogações por evento e revalida cada WebSocket no limite real de validade ou ociosidade da sessão. O token CSRF é independente, rotacionado no bootstrap autenticado e mantido somente em memória pelo frontend.
+
+Turnstile em WebView nativa é carregado por uma página mínima em `connect.k0sec.org/native/turnstile`. A página aceita apenas ações de autenticação conhecidas, valida a origem Tauri de destino e envia somente o token efêmero para a interface. A secret key continua exclusiva do Worker.
 
 ## Antiabuso
 

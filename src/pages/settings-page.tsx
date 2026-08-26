@@ -2,6 +2,8 @@ import { SettingsLayout } from '../components/settings-layout';
 import { Avatar } from '../components/avatar';
 import { ShieldIcon } from '../components/icons';
 import { useAuth } from '../features/auth/auth-context';
+import { isTauriApp } from '../core/platform/app-platform';
+import { NativeNotificationSettings } from '../ui/native/native-notification-settings';
 
 const ROLE_LABELS = {
   owner: 'Owner',
@@ -36,6 +38,7 @@ export function SettingsPage() {
           <p>O k0nnect não exige email, telefone ou nome real.</p>
         </div>
       </section>
+      {isTauriApp() && <NativeNotificationSettings />}
     </SettingsLayout>
   );
 }

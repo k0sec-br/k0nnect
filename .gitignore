@@ -13,3 +13,8 @@ test-results/
 *.log
 .DS_Store
 worker-configuration.d.ts.tmp
+src-tauri/target/
+src-tauri/gen/schemas/
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/app/build/
+src-tauri/gen/android/build/

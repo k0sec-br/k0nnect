@@ -126,8 +126,12 @@
   align-items: center;
   gap: 0.55rem;
   padding: 0 0.6rem;
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
+  appearance: none;
+  background: transparent;
   color: var(--text-secondary);
+  cursor: pointer;
   font-size: 0.94rem;
   text-align: left;
   width: 100%;
@@ -160,6 +164,12 @@
 .voice-channel-call:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+.voice-channel-call.is-unavailable {
+  color: var(--text-tertiary);
+}
+.voice-channel-call.is-unavailable svg {
+  opacity: 0.65;
 }
 .voice-channel-copy {
   display: grid;

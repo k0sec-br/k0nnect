@@ -1,0 +1,336 @@
+.native-auth-shell,
+.native-startup-screen,
+.native-connection-screen {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 50% -25%, var(--accent-subtle), transparent 38rem),
+    var(--surface-root);
+}
+
+.native-auth-shell {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  place-items: center;
+  padding: clamp(1.25rem, 4vw, 3rem);
+}
+
+.native-auth-card {
+  width: min(100%, 25rem);
+  padding: clamp(1.4rem, 4vw, 2.15rem);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-overlay);
+  background: var(--surface-sidebar);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 28%);
+}
+
+.native-auth-brand {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.7rem;
+}
+
+.native-auth-heading {
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.native-auth-heading h1 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.55rem, 4vw, 1.9rem);
+}
+
+.native-auth-heading p,
+.native-auth-invite,
+.native-auth-security {
+  color: var(--text-tertiary);
+}
+
+.native-auth-heading p {
+  margin: 0.45rem 0 0;
+  font-size: 0.88rem;
+}
+
+.native-login-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.native-login-form .label-row {
+  margin-top: 0.25rem;
+}
+
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap input {
+  width: 100%;
+  padding-right: 4.8rem;
+}
+
+.password-visibility-button {
+  position: absolute;
+  top: 50%;
+  right: 0.65rem;
+  padding: 0.3rem;
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+  transform: translateY(-50%);
+}
+
+.password-visibility-button:hover,
+.password-visibility-button:focus-visible {
+  color: var(--text-primary);
+}
+
+.native-auth-invite {
+  margin: 1.15rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.native-auth-security {
+  align-self: end;
+  margin: 1.25rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
+
+.native-auth-card > .auth-panel,
+.native-auth-card > .recovery-card {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.native-auth-card > .auth-panel .auth-heading {
+  text-align: center;
+}
+
+.native-startup-screen,
+.native-connection-screen {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: 2rem;
+  text-align: center;
+}
+
+.native-startup-screen {
+  gap: 1.25rem;
+}
+
+.native-startup-screen p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.native-connection-screen {
+  gap: 1.5rem;
+}
+
+.native-connection-copy {
+  max-width: 28rem;
+}
+
+.native-connection-copy h1 {
+  margin: 0.5rem 0 0.75rem;
+  font-family: var(--font-heading);
+  font-size: clamp(1.65rem, 5vw, 2.25rem);
+}
+
+.native-connection-copy p:last-child {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.native-mobile-navigation {
+  display: none;
+}
+
+.native-update-notice {
+  position: fixed;
+  z-index: 90;
+  top: 0.75rem;
+  left: 50%;
+  max-width: min(90vw, 32rem);
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-elevated);
+  color: var(--warning);
+  font-size: 0.75rem;
+  transform: translateX(-50%);
+  box-shadow: 0 0.65rem 1.6rem rgb(0 0 0 / 28%);
+}
+
+.native-session-backdrop {
+  z-index: 150;
+}
+
+.native-session-dialog {
+  display: grid;
+  width: min(24rem, 100%);
+  gap: 1.35rem;
+  padding: 1.4rem;
+  border-radius: var(--radius-overlay);
+}
+
+.native-session-dialog h2 {
+  margin: 0.45rem 0 0.55rem;
+}
+
+.native-session-dialog p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.native-setting-list {
+  display: grid;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-sidebar);
+}
+
+.native-setting-row {
+  display: grid;
+  min-height: 4.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+}
+
+.native-setting-row + .native-setting-row {
+  border-top: 1px solid var(--border-default);
+}
+
+.native-setting-row > span {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.native-setting-row strong {
+  font-size: 0.86rem;
+}
+
+.native-setting-row small {
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.native-setting-row input[type='checkbox'] {
+  width: 2.4rem;
+  height: 1.35rem;
+  accent-color: var(--accent);
+}
+
+.turnstile-native-frame {
+  width: 100%;
+  height: 7.25rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-sidebar);
+}
+
+@media (max-width: 767px) {
+  [data-app-platform='mobile'] .native-auth-shell {
+    display: flex;
+    min-height: 100dvh;
+    flex-direction: column;
+    justify-content: center;
+    padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+      max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  }
+
+  [data-app-platform='mobile'] .native-auth-card {
+    width: 100%;
+    padding: 1.25rem;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  [data-app-platform='mobile'] .native-login-form input {
+    min-height: 3rem;
+    font-size: 1rem;
+  }
+
+  [data-app-platform='mobile'] .native-mobile-shell {
+    padding-left: 0;
+  }
+
+  [data-app-platform='mobile'] .native-mobile-shell > .group-rail {
+    display: none;
+  }
+
+  [data-app-platform='mobile'] .native-mobile-shell > .channel-sidebar {
+    left: 0;
+    width: 100vw;
+  }
+
+  [data-app-platform='mobile'] .native-mobile-shell > .app-main {
+    width: 100vw;
+    padding-bottom: calc(4.25rem + env(safe-area-inset-bottom));
+  }
+
+  [data-app-platform='mobile'] .native-mobile-shell > .drawer-backdrop {
+    left: 0;
+  }
+
+  [data-app-platform='mobile'] .native-mobile-navigation {
+    position: fixed;
+    z-index: 52;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: grid;
+    min-height: calc(4.25rem + env(safe-area-inset-bottom));
+    grid-template-columns: repeat(4, 1fr);
+    padding: 0.35rem 0.35rem env(safe-area-inset-bottom);
+    border-top: 1px solid var(--border-default);
+    background: var(--surface-rail);
+  }
+
+  [data-app-platform='mobile'] .native-mobile-navigation button,
+  [data-app-platform='mobile'] .native-mobile-navigation a {
+    display: grid;
+    min-width: 0;
+    min-height: 3.4rem;
+    place-items: center;
+    padding: 0.35rem 0.2rem;
+    border-radius: var(--radius-control);
+    color: var(--text-tertiary);
+    font-size: 0.68rem;
+    text-align: center;
+  }
+
+  [data-app-platform='mobile'] .native-mobile-navigation button:hover,
+  [data-app-platform='mobile'] .native-mobile-navigation button:focus-visible,
+  [data-app-platform='mobile'] .native-mobile-navigation a:hover,
+  [data-app-platform='mobile'] .native-mobile-navigation a:focus-visible {
+    background: var(--surface-active);
+    color: var(--text-primary);
+  }
+
+  [data-app-platform='mobile'] .native-mobile-shell > .mobile-voice-bar {
+    bottom: calc(4.25rem + env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .native-auth-shell *,
+  .native-startup-screen *,
+  .native-connection-screen * {
+    transition-duration: 0.01ms;
+  }
+}

@@ -147,4 +147,31 @@ describe('ConnectionSupervisor', () => {
     supervisor.disconnect();
     vi.useRealTimers();
   });
+
+  it('interrompe tentativas de recovery após o limite e expõe falha', async () => {
+    vi.useFakeTimers();
+    const states: CallConnectionState[] = [];
+    const recover = vi.fn(() => Promise.resolve(false));
+    const supervisor = new ConnectionSupervisor({
+      onStateChange: (state) => states.push(state),
+      random: () => 0,
+      recover,
+    });
+    supervisor.updateHealth({ active: true });
+    supervisor.requestRecovery('peer-failed', true);
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await vi.advanceTimersByTimeAsync(30_000);
+    }
+
+    expect(recover).toHaveBeenCalledTimes(6);
+    expect(states.at(-1)).toBe('failed');
+    expect(vi.getTimerCount()).toBe(0);
+
+    supervisor.requestRecovery('network-online', true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(recover).toHaveBeenCalledTimes(6);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
 });

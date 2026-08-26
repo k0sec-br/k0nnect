@@ -1,10 +1,15 @@
+import { isTauriApp } from '../../core/platform/app-platform';
+
 export function mediaErrorMessage(
   error: unknown,
   mediaLabel: 'microfone' | 'câmera' | 'compartilhamento' = 'microfone',
 ): string {
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
-      return `O acesso ao ${mediaLabel} foi bloqueado ou cancelado. Revise a permissão do navegador e tente novamente.`;
+      const permissionLocation = isTauriApp()
+        ? 'nas configurações de privacidade do sistema'
+        : 'nas permissões do navegador';
+      return `O acesso ao ${mediaLabel} foi bloqueado ou cancelado. Revise ${permissionLocation} e tente novamente.`;
     }
     if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
       if (mediaLabel === 'microfone') return 'Não encontramos um microfone disponível.';

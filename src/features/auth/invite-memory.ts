@@ -1,5 +1,9 @@
 let inviteToken: string | undefined;
 
+export function setInviteToken(token: string): void {
+  inviteToken = token;
+}
+
 export function consumeInviteToken(): string {
   if (inviteToken !== undefined) return inviteToken;
 

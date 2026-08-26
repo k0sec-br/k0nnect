@@ -10,6 +10,11 @@
   },
   "scripts": {
     "dev": "vite",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
     "build": "CLOUDFLARE_ENV=production vite build",
     "preview": "vite preview",
     "deploy": "pnpm build && wrangler deploy --env production",
@@ -34,6 +39,11 @@
     "audit:dependencies": "pnpm audit --audit-level high"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-deep-link": "^2.4.9",
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "hono": "4.13.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -45,6 +55,7 @@
     "@cloudflare/workers-types": "5.20260818.1",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.62.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",

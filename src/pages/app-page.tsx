@@ -6,6 +6,7 @@ import { AppShell } from '../components/app-shell';
 import { CallStage, type CallStageControls } from '../components/call-stage';
 import { CallView } from '../components/call-view';
 import { FloatingMediaDock } from '../components/floating-media-dock';
+import { voiceAvailability } from '../features/voice/voice-availability';
 import { FormMessage } from '../components/form-message';
 import { RemoteAudio } from '../components/remote-audio';
 import { useAuth } from '../features/auth/auth-context';
@@ -15,17 +16,22 @@ import { ChatView } from '../features/social/chat-view';
 import { CreateGroupDialog } from '../features/social/create-group-dialog';
 import { SocialHome } from '../features/social/social-home';
 import { navigate } from '../lib/navigation';
+import type { AppPlatform } from '../core/platform/app-platform';
+import {
+  consumePendingNativeConversation,
+  NATIVE_CONVERSATION_EVENT,
+} from '../core/navigation/native-deep-links';
 
 type NavigationContext = 'group' | 'home';
 type HomeContent = 'dm' | 'friends';
 type ActiveView = 'call' | 'chat';
 
-export function AppPage() {
+export function AppPage({ nativePlatform }: { nativePlatform?: Exclude<AppPlatform, 'web'> }) {
   const { logout, updateSocialState, user } = useAuth();
   const call = useCall();
   const { config, connectionState, members, room, socket, voice } = call;
-  const [channelsOpen, setChannelsOpen] = useState(() =>
-    window.matchMedia('(max-width: 767px)').matches,
+  const [channelsOpen, setChannelsOpen] = useState(
+    () => window.matchMedia('(max-width: 767px)').matches,
   );
   const [membersSidebarOpen, setMembersSidebarOpen] = useState(
     () => window.matchMedia('(min-width: 1200px)').matches,
@@ -38,6 +44,9 @@ export function AppPage() {
   const [visibleRuntimeMessage, setVisibleRuntimeMessage] = useState('');
   const [watchedConversationId, setWatchedConversationId] = useState<string | null>(null);
   const [watchedMediaKeys, setWatchedMediaKeys] = useState<string[]>([]);
+  const [nativeConversationRequest, setNativeConversationRequest] = useState<string | null>(() =>
+    nativePlatform ? consumePendingNativeConversation() : null,
+  );
 
   useEffect(() => {
     if (!directRecipient) return;
@@ -55,6 +64,34 @@ export function AppPage() {
   useEffect(() => {
     if (voice.status === 'idle') setActiveView('chat');
   }, [voice.status]);
+
+  const deepLinkConversations = call.conversations;
+  const selectDeepLinkConversation = call.selectConversation;
+  useEffect(() => {
+    if (!nativePlatform) return;
+    const receiveConversation = (event: Event) => {
+      setNativeConversationRequest((event as CustomEvent<string>).detail);
+      consumePendingNativeConversation();
+    };
+    window.addEventListener(NATIVE_CONVERSATION_EVENT, receiveConversation);
+    return () => window.removeEventListener(NATIVE_CONVERSATION_EVENT, receiveConversation);
+  }, [nativePlatform]);
+
+  useEffect(() => {
+    const conversationId =
+      nativeConversationRequest ?? new URLSearchParams(window.location.search).get('conversation');
+    if (!conversationId) return;
+    const conversation = deepLinkConversations.find((item) => item.id === conversationId);
+    if (!conversation) return;
+    selectDeepLinkConversation(conversation.id);
+    setDirectRecipient(null);
+    setNavigationContext(conversation.kind === 'dm' ? 'home' : 'group');
+    if (conversation.kind === 'dm') setHomeContent('dm');
+    setActiveView('chat');
+    setChannelsOpen(false);
+    setNativeConversationRequest(null);
+    window.history.replaceState({}, '', '/app');
+  }, [deepLinkConversations, nativeConversationRequest, selectDeepLinkConversation]);
 
   const runtimeMessage = voice.error || socket.message || call.loadError;
   useEffect(() => {
@@ -80,12 +117,19 @@ export function AppPage() {
             (conversationMember) => conversationMember.id === member.id,
           ),
         );
+  const communityVoiceAvailability = voiceAvailability({
+    connectionId: socket.connectionId,
+    connectionState: socket.connectionState,
+    realtimeEnabled: config?.realtimeEnabled,
+    roomAvailable: Boolean(room),
+  });
   const shellVoice = {
     status: voice.status,
     muted: voice.muted,
     userMuted: voice.userMuted,
     deafened: voice.deafened,
-    canJoin: Boolean(socket.connectionId && config?.realtimeEnabled && room),
+    canJoin: communityVoiceAvailability.canJoin,
+    availabilityMessage: communityVoiceAvailability.message,
     selectedMicrophone: voice.selectedMicrophone,
     microphones: voice.microphones,
     cameraState: voice.cameraState,
@@ -139,11 +183,11 @@ export function AppPage() {
   const selectedConversation = directRecipient ? null : call.selectedConversation;
   const canJoinSelectedCall = Boolean(
     socket.connectionId &&
-      config?.realtimeEnabled &&
-      selectedCallRoomId &&
-      (voice.status === 'idle' ||
-        selectedCallActive ||
-        call.callConversation?.id !== selectedConversation?.id),
+    config?.realtimeEnabled &&
+    selectedCallRoomId &&
+    (voice.status === 'idle' ||
+      selectedCallActive ||
+      call.callConversation?.id !== selectedConversation?.id),
   );
   const selectedCallAvailable = selectedCallParticipants.length > 0 || selectedCallActive;
   const selectedPeer = selectedConversation?.members.find((member) => member.id !== user.id);
@@ -280,6 +324,7 @@ export function AppPage() {
 
   return (
     <AppShell
+      {...(nativePlatform ? { nativePlatform } : {})}
       user={user}
       roomName={call.callConversation?.name ?? room?.name ?? 'Chamada'}
       participants={socket.participants}

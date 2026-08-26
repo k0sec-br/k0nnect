@@ -9,6 +9,13 @@ import {
 } from '../../../shared/protocol/room';
 import type { ChatMessageView, MemberView, SocialStateView } from '../../../shared/types/api';
 import { incrementDevelopmentMetric } from '../../lib/development-metrics';
+import { notifyNativeMessage } from '../../core/native/native-notifications';
+import {
+  createRealtimeSocket,
+  SOCKET_CONNECTING,
+  SOCKET_OPEN,
+  type RealtimeSocket,
+} from '../../core/network/native-transport';
 import {
   clearRealtimeResumeIdentity,
   loadRealtimeResumeIdentity,
@@ -54,11 +61,13 @@ export function useServerRealtime(
     member: MemberView,
   ) => void,
   onSocialChange: (state: SocialStateView) => void,
+  resolveDisplayName: (userId: string) => string,
 ) {
   const activeRef = useRef(false);
   const connectRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
   const logicalConnectionRef = useRef<LogicalConnection | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
+  const resolveDisplayNameRef = useRef(resolveDisplayName);
+  const socketRef = useRef<RealtimeSocket | null>(null);
   const transportGenerationRef = useRef(0);
   const pendingCommandsRef = useRef(new Map<string, PendingCommand>());
   const [connectionId, setConnectionId] = useState<string | null>(null);
@@ -67,6 +76,10 @@ export function useServerRealtime(
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [connectionState, setConnectionState] = useState<RealtimeConnectionState>('offline');
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    resolveDisplayNameRef.current = resolveDisplayName;
+  }, [resolveDisplayName]);
   const [callReplacementCount, setCallReplacementCount] = useState(0);
   const chatMessagesRef = useRef<Record<string, ChatMessageView[]>>({});
   const historyLoadedConversationIdsRef = useRef(new Set<string>());
@@ -127,7 +140,7 @@ export function useServerRealtime(
     const historyLoadedConversationIds = historyLoadedConversationIdsRef.current;
     const chatListeners = chatListenersRef.current;
 
-    let scheduleReconnect = (_immediate = false) => undefined;
+    let scheduleReconnect: (immediate?: boolean) => void = () => undefined;
     const clearReconnectTimer = () => {
       if (reconnectTimer === null) return;
       window.clearTimeout(reconnectTimer);
@@ -136,8 +149,8 @@ export function useServerRealtime(
     const connect = async (): Promise<boolean> => {
       if (!activeRef.current) return false;
       const currentSocket = socketRef.current;
-      if (currentSocket?.readyState === WebSocket.OPEN) return true;
-      if (currentSocket?.readyState === WebSocket.CONNECTING) {
+      if (currentSocket?.readyState === SOCKET_OPEN) return true;
+      if (currentSocket?.readyState === SOCKET_CONNECTING) {
         return new Promise((resolve) => {
           const timeout = window.setTimeout(() => resolve(false), SOCKET_READY_TIMEOUT_MS);
           currentSocket.addEventListener(
@@ -173,7 +186,7 @@ export function useServerRealtime(
         url.searchParams.set('connectionId', logicalConnection.connectionId);
         url.searchParams.set('connectionEpoch', String(requestedEpoch));
       }
-      const socket = new WebSocket(url);
+      const socket = createRealtimeSocket(url);
       socketRef.current = socket;
 
       return new Promise((resolve) => {
@@ -189,7 +202,8 @@ export function useServerRealtime(
           settle(false);
         }, SOCKET_READY_TIMEOUT_MS);
 
-        socket.addEventListener('message', (event) => {
+        socket.addEventListener('message', (rawEvent) => {
+          const event = rawEvent as MessageEvent<string>;
           if (generation !== transportGenerationRef.current || typeof event.data !== 'string')
             return;
           incrementDevelopmentMetric('wsMessagesReceived');
@@ -324,6 +338,13 @@ export function useServerRealtime(
             return;
           }
           if (realtimeMessage.type === 'chat.message') {
+            if (realtimeMessage.payload.senderId !== userId) {
+              void notifyNativeMessage({
+                content: realtimeMessage.payload.content,
+                conversationId: realtimeMessage.payload.conversationId,
+                sender: resolveDisplayNameRef.current(realtimeMessage.payload.senderId),
+              });
+            }
             updateChat(realtimeMessage.payload.conversationId, (current) => [
               ...current.filter(
                 (message) =>
@@ -401,7 +422,8 @@ export function useServerRealtime(
           }
         });
 
-        socket.addEventListener('close', (event) => {
+        socket.addEventListener('close', (rawEvent) => {
+          const event = rawEvent as CloseEvent;
           if (generation !== transportGenerationRef.current) return;
           settle(false);
           if (!activeRef.current) return;
@@ -424,7 +446,9 @@ export function useServerRealtime(
 
     scheduleReconnect = (immediate = false) => {
       if (!activeRef.current || reconnectTimer !== null || !navigator.onLine) return;
-      const delay = immediate ? 0 : RECONNECT_DELAYS_MS[Math.min(reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
+      const delay = immediate
+        ? 0
+        : RECONNECT_DELAYS_MS[Math.min(reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
       reconnectAttempt += 1;
       reconnectTimer = window.setTimeout(() => {
         reconnectTimer = null;
@@ -476,14 +500,14 @@ export function useServerRealtime(
   }, [onMemberEvent, onSocialChange, serverId, settleCommand, updateChat, userId]);
 
   const reconcile = useCallback(async () => {
-    if (socketRef.current?.readyState === WebSocket.OPEN) return true;
+    if (socketRef.current?.readyState === SOCKET_OPEN) return true;
     return connectRef.current();
   }, []);
 
   const sendCommand = useCallback(async (message: ClientRoomMessage, requestId: string) => {
     if (!(await connectRef.current())) throw new Error('Conexão realtime indisponível.');
     const socket = socketRef.current;
-    if (socket?.readyState !== WebSocket.OPEN) throw new Error('Conexão realtime indisponível.');
+    if (socket?.readyState !== SOCKET_OPEN) throw new Error('Conexão realtime indisponível.');
     return new Promise<void>((resolve, reject) => {
       const timer = window.setTimeout(() => {
         pendingCommandsRef.current.delete(requestId);
@@ -522,7 +546,7 @@ export function useServerRealtime(
   }, [sendCommand, userId]);
 
   const send = useCallback((realtimeMessage: ClientRoomMessage) => {
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
+    if (socketRef.current?.readyState === SOCKET_OPEN) {
       socketRef.current.send(JSON.stringify(realtimeMessage));
       incrementDevelopmentMetric('wsMessagesSent');
     }
@@ -536,7 +560,7 @@ export function useServerRealtime(
     ) => {
       if (!(await connectRef.current())) throw new Error('Conexão realtime indisponível.');
       const socket = socketRef.current;
-      if (socket?.readyState !== WebSocket.OPEN) throw new Error('Conexão realtime indisponível.');
+      if (socket?.readyState !== SOCKET_OPEN) throw new Error('Conexão realtime indisponível.');
       const clientMessageId = retryClientMessageId ?? crypto.randomUUID();
       const cacheId =
         'conversationId' in target ? target.conversationId : `pending_${target.recipientUserId}`;

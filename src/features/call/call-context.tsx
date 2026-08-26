@@ -111,12 +111,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
     (state: SocialStateView) => updateSocialState(state),
     [updateSocialState],
   );
+  const resolveDisplayName = useCallback(
+    (memberId: string) =>
+      members.find((member) => member.id === memberId)?.displayName ?? 'Nova mensagem',
+    [members],
+  );
 
   const realtime = useServerRealtime(
     user && bootstrap ? bootstrap.server.id : null,
     user?.id ?? null,
     handleMemberEvent,
     handleSocialChange,
+    resolveDisplayName,
   );
   const participants = useMemo<RoomParticipant[]>(
     () =>
@@ -166,6 +172,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
   });
   const joinVoice = voice.join;
   const switchVoiceCall = voice.switchCall;
+  const bootstrapServerId = bootstrap?.server.id;
+  const currentUserId = user?.id;
 
   useEffect(() => {
     if (!voice.callConflictChannelId) return;
@@ -177,21 +185,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, [bootstrap?.conversations, voice.callConflictChannelId]);
 
   useEffect(() => {
-    if (!bootstrap || !user) return;
-    callResumeRef.current = loadCallResumeState(bootstrap.server.id, user.id);
+    if (!bootstrapServerId || !currentUserId) return;
+    callResumeRef.current = loadCallResumeState(bootstrapServerId, currentUserId);
     resumedCallRef.current = false;
     shouldResumeCameraRef.current = false;
     hadActiveCallRef.current = false;
-  }, [bootstrap?.server.id, user?.id]);
+  }, [bootstrapServerId, currentUserId]);
 
   useEffect(() => {
     const resumeState = callResumeRef.current;
-    if (
-      !resumeState ||
-      resumedCallRef.current ||
-      !socket.connectionId ||
-      voice.status !== 'idle'
-    ) {
+    if (!resumeState || resumedCallRef.current || !socket.connectionId || voice.status !== 'idle') {
       return;
     }
     const conversation = bootstrap?.conversations.find(
@@ -209,11 +212,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
     void joinVoice(false, conversation.callRoomId);
   }, [bootstrap, joinVoice, socket.connectionId, user, voice.status]);
 
+  const voiceCameraState = voice.cameraState;
+  const startVoiceCamera = voice.startCamera;
+  const voiceStatus = voice.status;
   useEffect(() => {
-    if (!shouldResumeCameraRef.current || voice.status !== 'connected') return;
+    if (!shouldResumeCameraRef.current || voiceStatus !== 'connected') return;
     shouldResumeCameraRef.current = false;
-    if (voice.cameraState === 'idle') void voice.startCamera();
-  }, [voice.cameraState, voice.startCamera, voice.status]);
+    if (voiceCameraState === 'idle') void startVoiceCamera();
+  }, [startVoiceCamera, voiceCameraState, voiceStatus]);
 
   useEffect(() => {
     if (!bootstrap || !user) return;
@@ -245,12 +251,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
         return;
       }
       switchingCallRef.current = true;
-      void switchVoiceCall(conversation.callRoomId).then(() => {
-        hadActiveCallRef.current = true;
-        setCallConversationId(conversationId);
-      }).finally(() => {
-        switchingCallRef.current = false;
-      });
+      void switchVoiceCall(conversation.callRoomId)
+        .then(() => {
+          hadActiveCallRef.current = true;
+          setCallConversationId(conversationId);
+        })
+        .finally(() => {
+          switchingCallRef.current = false;
+        });
     },
     [bootstrap?.conversations, joinVoice, switchVoiceCall, voice.status],
   );

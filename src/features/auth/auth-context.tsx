@@ -15,13 +15,18 @@ import type {
   SessionUser,
   SocialStateView,
 } from '../../../shared/types/api';
-import { apiClient } from '../../lib/api-client';
+import { SESSION_EXPIRED_EVENT } from '../../core/auth/session-events';
+import { apiClient, UserFacingError } from '../../lib/api-client';
+
+export type BootstrapFailure = 'network' | 'server' | null;
 
 interface AuthContextValue {
   loading: boolean;
   user: SessionUser | null;
   bootstrap: Extract<BootstrapView, { authenticated: true }> | null;
   config: PublicConfig | null;
+  bootstrapFailure: BootstrapFailure;
+  sessionExpired: boolean;
   login(username: string, password: string, turnstileToken?: string): Promise<void>;
   register(input: {
     inviteToken: string;
@@ -32,6 +37,7 @@ interface AuthContextValue {
   }): Promise<string[]>;
   logout(all?: boolean): Promise<void>;
   refresh(): Promise<void>;
+  acknowledgeSessionExpiration(): void;
   updateSocialState(state: SocialStateView): void;
 }
 
@@ -45,10 +51,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     { authenticated: true }
   > | null>(null);
   const [config, setConfig] = useState<PublicConfig | null>(null);
+  const [bootstrapFailure, setBootstrapFailure] = useState<BootstrapFailure>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
 
   const refresh = useCallback((): Promise<void> => {
     if (refreshPromiseRef.current) return refreshPromiseRef.current;
+    setLoading(true);
+    setBootstrapFailure(null);
     const pending = (async () => {
       try {
         const result = await apiClient.get<BootstrapView>('/api/bootstrap');
@@ -62,9 +72,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setBootstrap(null);
           apiClient.setCsrfToken(null);
         }
-      } catch {
+      } catch (caught) {
         setUser(null);
+        setBootstrap(null);
         apiClient.setCsrfToken(null);
+        setBootstrapFailure(
+          caught instanceof UserFacingError && caught.code === 'NETWORK_UNAVAILABLE'
+            ? 'network'
+            : 'server',
+        );
       } finally {
         setLoading(false);
       }
@@ -80,6 +96,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const handleSessionExpiration = () => {
+      apiClient.setCsrfToken(null);
+      setSessionExpired(true);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpiration);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpiration);
+  }, []);
+
   const updateSocialState = useCallback((state: SocialStateView) => {
     setBootstrap((current) => (current ? { ...current, ...state } : current));
   }, []);
@@ -87,12 +112,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       loading,
+      bootstrapFailure,
+      sessionExpired,
       user,
       bootstrap,
       config,
       refresh,
+      acknowledgeSessionExpiration() {
+        apiClient.setCsrfToken(null);
+        setSessionExpired(false);
+        setUser(null);
+        setBootstrap(null);
+      },
       updateSocialState,
       async login(username, password, turnstileToken) {
+        setSessionExpired(false);
         const result = await apiClient.post<{ user: SessionUser; csrfToken: string }>(
           '/api/auth/login',
           { username, password, ...(turnstileToken ? { turnstileToken } : {}) },
@@ -102,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await refresh();
       },
       async register(input) {
+        setSessionExpired(false);
         const result = await apiClient.post<{
           user: SessionUser;
           csrfToken: string;
@@ -117,9 +152,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         apiClient.setCsrfToken(null);
         setUser(null);
         setBootstrap(null);
+        setSessionExpired(false);
       },
     }),
-    [bootstrap, config, loading, refresh, updateSocialState, user],
+    [
+      bootstrap,
+      bootstrapFailure,
+      config,
+      loading,
+      refresh,
+      sessionExpired,
+      updateSocialState,
+      user,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

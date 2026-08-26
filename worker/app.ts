@@ -8,6 +8,7 @@ import { authRoutes } from './routes/auth-routes';
 import { bootstrapRoute } from './routes/bootstrap-route';
 import { realtimeRoutes } from './routes/realtime-routes';
 import { serverRoutes } from './routes/server-routes';
+import { nativeRoutes } from './routes/native-routes';
 import { socialRoutes } from './routes/social-routes';
 import { applySecurityHeaders } from './security/headers';
 import { logSecurityEvent } from './security/logger';
@@ -50,6 +51,7 @@ app.route('/api/admin', adminRoutes);
 app.route('/api/servers', serverRoutes);
 app.route('/api/social', socialRoutes);
 app.route('/api/realtime', realtimeRoutes);
+app.route('/native', nativeRoutes);
 
 app.notFound((context) => failure(context, new AppError('INTERNAL_ERROR', 404)));
 
