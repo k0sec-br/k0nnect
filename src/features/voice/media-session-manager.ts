@@ -20,7 +20,6 @@ interface CloseResponse {
 interface LocalPublication {
   publication: MediaPublication;
   sender: RTCRtpSender;
-  transceiver: RTCRtpTransceiver;
   track: MediaStreamTrack;
 }
 
@@ -94,21 +93,6 @@ export function resolvePublicationMids(
     if (fallback) claimedMids.add(fallback);
     return fallback ?? '';
   });
-}
-
-function addMicrophoneTrack(
-  peerConnection: RTCPeerConnection,
-  track: MediaStreamTrack,
-  stream: MediaStream,
-): RTCRtpTransceiver {
-  const sender = peerConnection.addTrack(track, stream);
-  const transceiver = peerConnection
-    .getTransceivers()
-    .find((candidate) => candidate.sender === sender);
-  if (!transceiver) {
-    throw new DOMException('Transceiver de microfone indisponível', 'InvalidStateError');
-  }
-  return transceiver;
 }
 
 export class MediaSessionManager {
@@ -208,19 +192,27 @@ export class MediaSessionManager {
       if (tracks.some(({ source }) => this.localPublications.has(source))) {
         throw new DOMException('Esta mídia já está publicada', 'InvalidStateError');
       }
-      const transceivers = tracks.map(({ track, stream, source }) => {
-        if (source === 'microphone') return addMicrophoneTrack(peerConnection, track, stream);
-        return peerConnection.addTransceiver(track, {
+      const senders: RTCRtpSender[] = [];
+      const midSources: Pick<RTCRtpTransceiver, 'mid'>[] = [];
+      for (const { track, stream, source } of tracks) {
+        if (source === 'microphone') {
+          senders.push(peerConnection.addTrack(track, stream));
+          midSources.push({ mid: null });
+          continue;
+        }
+        const transceiver = peerConnection.addTransceiver(track, {
           direction: 'sendonly',
           streams: [stream],
           ...(source === 'camera' ? { sendEncodings: VIDEO_ENCODINGS } : {}),
         });
-      });
+        senders.push(transceiver.sender);
+        midSources.push(transceiver);
+      }
       try {
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         if (!offer.sdp) throw new DOMException('SDP indisponível', 'InvalidStateError');
-        const mids = resolvePublicationMids(tracks, transceivers, offer.sdp);
+        const mids = resolvePublicationMids(tracks, midSources, offer.sdp);
         if (mids.some((mid) => !mid)) {
           throw new DOMException('Faixa sem identificador', 'InvalidStateError');
         }
@@ -240,18 +232,16 @@ export class MediaSessionManager {
         }
         response.publications.forEach((publication, index) => {
           const input = tracks[index]!;
-          const transceiver = transceivers[index]!;
           this.localPublications.set(input.source, {
             publication,
-            sender: transceiver.sender,
-            transceiver,
+            sender: senders[index]!,
             track: input.track,
           });
         });
         return response.publications;
       } catch (error) {
-        for (const [index, transceiver] of transceivers.entries()) {
-          transceiver.sender.replaceTrack(null).catch(() => undefined);
+        for (const [index, sender] of senders.entries()) {
+          sender.replaceTrack(null).catch(() => undefined);
           if (stopTracksOnFailure) tracks[index]?.track.stop();
         }
         throw error;
