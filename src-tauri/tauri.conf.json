@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "org.k0sec.k0nnect",
   "build": {
-    "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": "pnpm desktop:frontend",
+    "devUrl": "http://127.0.0.1:5174",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist/client"
   },

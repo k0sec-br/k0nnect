@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "desktop:frontend": "vite --host 127.0.0.1 --port 5174 --strictPort",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "android:init": "tauri android init",

@@ -87,6 +87,8 @@ pnpm android:dev
 pnpm android:build
 ```
 
+`pnpm desktop:dev` inicia o Vite em `127.0.0.1:5174` e abre a janela Tauri. Mantenha o comando em execução durante o desenvolvimento; `Ctrl+C` encerra o servidor e o aplicativo.
+
 `pnpm tauri info` lista os pré-requisitos detectados. Antes de uma release, valide login, restauração e revogação de sessão, deep links com o processo aberto e fechado, tray, notificações, permissões, updater assinado, áudio, câmera, troca de dispositivo, compartilhamento de tela, suspensão e reconexão em dispositivos reais.
 
 ## Segurança de release
