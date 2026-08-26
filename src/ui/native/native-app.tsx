@@ -16,6 +16,7 @@ import { SettingsPage } from '../../pages/settings-page';
 import { DesktopLoginScreen } from '../desktop/desktop-login-screen';
 import { MobileLoginScreen } from '../mobile/mobile-login-screen';
 import { NativeConnectionScreen } from './native-connection-screen';
+import { NativeMediaPermissionDialog } from './native-media-permission-dialog';
 import { NativeStartupScreen } from './native-startup-screen';
 import { NativeSessionExpiredDialog } from './native-session-expired-dialog';
 import { NativeUpdateNotice } from './native-update-notice';
@@ -60,6 +61,7 @@ export function NativeApp({ platform }: { platform: Exclude<AppPlatform, 'web'> 
     <>
       <NativeUpdateNotice message={updater.warning} />
       {content}
+      <NativeMediaPermissionDialog />
       {sessionExpired && (
         <NativeSessionExpiredDialog
           onContinue={() => {

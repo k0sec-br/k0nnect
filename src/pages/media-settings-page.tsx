@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { DeviceSelect } from '../components/device-select';
+import { runWithNativeMediaPermission } from '../core/native/native-media-permissions';
 import { MediaVideo } from '../components/media-video';
 import { SettingsLayout } from '../components/settings-layout';
 import { useCall } from '../features/call/call-context';
@@ -34,10 +35,12 @@ export function MediaSettingsPage() {
     stopPreview();
     setError('');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: cameraConstraints(voice.selectedCamera || undefined),
-      });
+      const stream = await runWithNativeMediaPermission('camera', () =>
+        navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: cameraConstraints(voice.selectedCamera || undefined),
+        }),
+      );
       setPreview(stream);
     } catch (caught) {
       setError(mediaErrorMessage(caught, 'câmera'));

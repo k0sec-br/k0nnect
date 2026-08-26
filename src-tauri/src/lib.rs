@@ -1,3 +1,5 @@
+#[cfg(desktop)]
+mod media_origin;
 mod native_api;
 mod native_socket;
 
@@ -6,6 +8,9 @@ mod tray;
 
 #[cfg(target_os = "linux")]
 mod linux_media;
+
+#[cfg(target_os = "windows")]
+mod windows_media;
 
 use native_api::{native_api_request, NativeApiClient};
 use native_socket::{
@@ -49,6 +54,8 @@ pub fn run() {
             app.manage(NativeApiClient::new().map_err(std::io::Error::other)?);
             #[cfg(target_os = "linux")]
             linux_media::configure(app)?;
+            #[cfg(target_os = "windows")]
+            windows_media::configure(app)?;
             #[cfg(desktop)]
             tray::setup_tray(app)?;
             Ok(())

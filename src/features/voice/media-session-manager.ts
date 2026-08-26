@@ -1,5 +1,6 @@
 import type { MediaEndReason, MediaPublication, MediaSource } from '../../../shared/protocol/room';
 import { apiClient } from '../../lib/api-client';
+import { runWithNativeMediaPermission } from '../../core/native/native-media-permissions';
 import { assertVoiceMediaSupport } from './media-capabilities';
 import { NegotiationQueue } from './negotiation-queue';
 
@@ -116,15 +117,17 @@ export class MediaSessionManager {
     assertVoiceMediaSupport();
     const stream = existingMicrophone
       ? new MediaStream([existingMicrophone])
-      : await navigator.mediaDevices.getUserMedia({
-          audio: {
-            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-          video: false,
-        });
+      : await runWithNativeMediaPermission('microphone', () =>
+          navigator.mediaDevices.getUserMedia({
+            audio: {
+              ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+            video: false,
+          }),
+        );
     const track = existingMicrophone ?? stream.getAudioTracks()[0];
     if (!track) throw new DOMException('Microfone indisponível', 'NotFoundError');
 
@@ -334,15 +337,17 @@ export class MediaSessionManager {
   }
 
   async changeMicrophone(deviceId: string): Promise<MediaStreamTrack> {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: { exact: deviceId },
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: false,
-    });
+    const stream = await runWithNativeMediaPermission('microphone', () =>
+      navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: { exact: deviceId },
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      }),
+    );
     const replacement = stream.getAudioTracks()[0];
     if (!replacement) {
       stream.getTracks().forEach((track) => track.stop());

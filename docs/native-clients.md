@@ -43,7 +43,11 @@ Uma entrada inicial que não consegue publicar mídia retorna ao estado inativo 
 
 ## Mídia e permissões
 
-Microfone é solicitado ao entrar em voz e câmera ao ativar o respectivo controle. Compartilhamento de tela abre o seletor seguro da plataforma a cada compartilhamento. O aplicativo não salva nem contorna decisões de privacidade do sistema operacional.
+Microfone é solicitado ao entrar em voz e câmera ao ativar o respectivo controle. No primeiro uso de cada recurso, o cliente instalado apresenta um diálogo do k0nnect explicando a finalidade da captura. A confirmação é lembrada localmente para evitar explicações repetidas; a autorização efetiva continua sob controle do sistema operacional.
+
+No Windows e no Linux, o host autoriza internamente pedidos de microfone e câmera feitos pela origem local do aplicativo. Essa autorização não é concedida ao site público nem a conteúdo remoto. No Android, o diálogo do k0nnect antecede a permissão de runtime obrigatória do sistema. Depois de concedida, a decisão persiste conforme as regras do Android e pode ser revogada nas configurações do aparelho.
+
+Compartilhamento de tela abre o seletor seguro da plataforma a cada nova captura. A escolha da tela ou janela e os indicadores de captura permanecem sob controle do sistema; o aplicativo não seleciona uma fonte silenciosamente, não usa privilégios de administrador e não contorna decisões de privacidade.
 
 No Linux, o WebKitGTK habilita explicitamente WebRTC e captura de mídia antes de recarregar o contexto da aplicação, além de usar um manipulador restrito a requisições de áudio e vídeo. O microfone usa a associação padrão de track, enquanto câmera e tela usam transceivers explícitas. A publicação usa o `mid` da transceiver, o identificador equivalente da offer SDP ou a seção de mídia correspondente, conforme a disponibilidade da implementação WebRTC.
 
@@ -101,13 +105,13 @@ pnpm desktop:build:windows:local
 
 O executável fica em `src-tauri/target/x86_64-pc-windows-msvc/release/k0nnect.exe`. O instalador local sem assinatura fica em `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`. Builds públicas configuram a chave privada do updater somente no ambiente protegido da CI, preservam `bundle.createUpdaterArtifacts` e omitem `--no-sign`.
 
-No Fedora, gere o APK ARM64 de teste com Java 21 para aparelhos Android físicos:
+O projeto Android fixa Java 21 para o daemon em `src-tauri/gen/android/gradle/gradle-daemon-jvm.properties`. O Gradle localiza uma instalação compatível mesmo quando o Java padrão do terminal ou da IDE é mais recente. Gere o APK ARM64 de teste para aparelhos Android físicos com:
 
 ```bash
-JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
-PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH \
 pnpm android:build --debug --target aarch64 --apk
 ```
+
+Java 21 precisa estar instalado e detectável pelo Gradle. No Android Studio, a sincronização também deve usar o wrapper do projeto; o critério de JVM seleciona o JDK 21 para o daemon.
 
 O APK fica em `src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`. A variante `aarch64` empacota a biblioteca `arm64-v8a`; `x86_64` é destinada a emuladores compatíveis.
 

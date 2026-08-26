@@ -36,6 +36,10 @@ tauri-plugin-window-state = "2"
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2", features = ["v2_38"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.38.2"
+windows = "0.61"
+
 [target.'cfg(target_os = "android")'.dependencies]
 keyring = { version = "4.1.6", default-features = false, features = ["android-native-keyring-store", "cli"] }
 keyring-core = "1.0.0"

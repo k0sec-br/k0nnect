@@ -1,4 +1,5 @@
 import { cameraConstraints } from './media-device-preferences';
+import { runWithNativeMediaPermission } from '../../core/native/native-media-permissions';
 
 export class CameraManager {
   private activeStream: MediaStream | null = null;
@@ -15,8 +16,9 @@ export class CameraManager {
     this.activeStream = null;
     if (this.startOperation) return this.startOperation;
     const generation = this.generation;
-    this.startOperation = this.mediaDevices
-      .getUserMedia({ audio: false, video: cameraConstraints(deviceId) })
+    this.startOperation = runWithNativeMediaPermission('camera', () =>
+      this.mediaDevices.getUserMedia({ audio: false, video: cameraConstraints(deviceId) }),
+    )
       .then((stream) => {
         if (generation !== this.generation) {
           stream.getTracks().forEach((track) => track.stop());
@@ -43,10 +45,12 @@ export class CameraManager {
     const generation = this.generation;
     let nextStream: MediaStream;
     try {
-      nextStream = await this.mediaDevices.getUserMedia({
-        audio: false,
-        video: cameraConstraints(deviceId),
-      });
+      nextStream = await runWithNativeMediaPermission('camera', () =>
+        this.mediaDevices.getUserMedia({
+          audio: false,
+          video: cameraConstraints(deviceId),
+        }),
+      );
     } catch (error) {
       if (!facingMode || (error instanceof DOMException && error.name === 'NotAllowedError')) {
         throw error;
@@ -107,8 +111,9 @@ export class ScreenShareManager {
     if (this.activeStream) return Promise.resolve(this.activeStream);
     if (this.startOperation) return this.startOperation;
     const generation = this.generation;
-    this.startOperation = this.mediaDevices
-      .getDisplayMedia({ video: true, audio: true })
+    this.startOperation = runWithNativeMediaPermission('screen', () =>
+      this.mediaDevices.getDisplayMedia({ video: true, audio: true }),
+    )
       .then((stream) => {
         if (generation !== this.generation) {
           stream.getTracks().forEach((track) => track.stop());
