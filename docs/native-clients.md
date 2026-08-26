@@ -45,7 +45,7 @@ Uma entrada inicial que não consegue publicar mídia retorna ao estado inativo 
 
 Microfone é solicitado ao entrar em voz e câmera ao ativar o respectivo controle. Compartilhamento de tela abre o seletor seguro da plataforma a cada compartilhamento. O aplicativo não salva nem contorna decisões de privacidade do sistema operacional.
 
-No Linux, o WebKitGTK recebe explicitamente a habilitação de mídia e o manipulador restrito a requisições de áudio e vídeo. A publicação de uma track usa o `mid` do transceiver ou o identificador equivalente da offer SDP, conforme a disponibilidade da implementação WebRTC. Os pacotes RPM incluem dependências de PipeWire e libnice; os pacotes Debian declaram os equivalentes. O AppImage reúne as dependências de mídia distribuídas com o aplicativo.
+No Linux, o WebKitGTK recebe explicitamente a habilitação de mídia e o manipulador restrito a requisições de áudio e vídeo. A publicação de uma track usa o `mid` do transceiver, o identificador equivalente da offer SDP ou a seção de mídia correspondente, conforme a disponibilidade da implementação WebRTC. Os pacotes RPM incluem dependências de PipeWire e libnice; os pacotes Debian declaram os equivalentes. O AppImage reúne as dependências de mídia distribuídas com o aplicativo.
 
 Para desenvolvimento no Fedora, instale o elemento WebRTC do GStreamer com `sudo dnf install -y libnice-gstreamer1`.
 

@@ -44,15 +44,32 @@ const VIDEO_ENCODINGS: RTCRtpEncodingParameters[] = [
 ];
 
 interface PublicationTrackInput {
-  track: Pick<MediaStreamTrack, 'id'>;
+  track: Pick<MediaStreamTrack, 'id' | 'kind'>;
+}
+
+interface OfferMediaSection {
+  kind: 'audio' | 'video';
+  mid: string;
+  trackId?: string;
+}
+
+function mediaSectionsFromSdp(sdp: string): OfferMediaSection[] {
+  const sections: OfferMediaSection[] = [];
+  for (const mediaSection of sdp.split(/\r?\nm=/u).slice(1)) {
+    const kind = mediaSection.split(/\s/u, 1)[0];
+    const mid = mediaSection.match(/(?:^|\r?\n)a=mid:([^\r\n]+)/u)?.[1]?.trim();
+    const trackId = mediaSection.match(/(?:^|\r?\n)a=msid:\S+\s+(\S+)/u)?.[1];
+    if ((kind === 'audio' || kind === 'video') && mid) {
+      sections.push(trackId ? { kind, mid, trackId } : { kind, mid });
+    }
+  }
+  return sections;
 }
 
 function trackMidsFromSdp(sdp: string): Map<string, string> {
   const midsByTrackId = new Map<string, string>();
-  for (const mediaSection of sdp.split(/\r?\nm=/u).slice(1)) {
-    const mid = mediaSection.match(/(?:^|\r?\n)a=mid:([^\r\n]+)/u)?.[1]?.trim();
-    const trackId = mediaSection.match(/(?:^|\r?\n)a=msid:\S+\s+(\S+)/u)?.[1];
-    if (mid && trackId) midsByTrackId.set(trackId, mid);
+  for (const section of mediaSectionsFromSdp(sdp)) {
+    if (section.trackId) midsByTrackId.set(section.trackId, section.mid);
   }
   return midsByTrackId;
 }
@@ -63,9 +80,20 @@ export function resolvePublicationMids(
   offerSdp: string,
 ): string[] {
   const midsByTrackId = trackMidsFromSdp(offerSdp);
-  return tracks.map(
-    ({ track }, index) => transceivers[index]?.mid ?? midsByTrackId.get(track.id) ?? '',
-  );
+  const sections = mediaSectionsFromSdp(offerSdp);
+  const claimedMids = new Set<string>();
+  return tracks.map(({ track }, index) => {
+    const mid = transceivers[index]?.mid ?? midsByTrackId.get(track.id);
+    if (mid) {
+      claimedMids.add(mid);
+      return mid;
+    }
+    const fallback = sections.findLast(
+      (section) => section.kind === track.kind && !claimedMids.has(section.mid),
+    )?.mid;
+    if (fallback) claimedMids.add(fallback);
+    return fallback ?? '';
+  });
 }
 
 export class MediaSessionManager {

@@ -103,7 +103,23 @@ describe('camada de mídia', () => {
     ].join('\r\n');
 
     expect(
-      resolvePublicationMids([{ track: { id: 'microphone-track' } }], [{ mid: null }], sdp),
+      resolvePublicationMids(
+        [{ track: { id: 'microphone-track', kind: 'audio' } }],
+        [{ mid: null }],
+        sdp,
+      ),
+    ).toEqual(['audio-0']);
+  });
+
+  it('usa a seção de mídia da offer quando o WebKit não fornece msid', () => {
+    const sdp = ['v=0', 'm=audio 9 UDP/TLS/RTP/SAVPF 111', 'a=mid:audio-0'].join('\r\n');
+
+    expect(
+      resolvePublicationMids(
+        [{ track: { id: 'microphone-track', kind: 'audio' } }],
+        [{ mid: null }],
+        sdp,
+      ),
     ).toEqual(['audio-0']);
   });
 
