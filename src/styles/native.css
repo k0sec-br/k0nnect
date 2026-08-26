@@ -339,25 +339,42 @@
   }
 
   [data-app-platform='mobile'] .native-mobile-shell {
-    padding-left: 0;
+    --native-mobile-navigation-height: 4.5rem;
+    --native-mobile-rail-width: 4rem;
+
+    padding-left: var(--native-mobile-rail-width);
   }
 
   [data-app-platform='mobile'] .native-mobile-shell > .group-rail {
-    display: none;
+    display: flex;
+    width: var(--native-mobile-rail-width);
+    padding-inline: 0.45rem;
+    padding-bottom: calc(0.7rem + env(safe-area-inset-bottom));
+  }
+
+  [data-app-platform='mobile'] .native-mobile-shell > .group-rail .rail-item {
+    width: 3rem;
+    height: 3rem;
   }
 
   [data-app-platform='mobile'] .native-mobile-shell > .channel-sidebar {
-    left: 0;
-    width: 100vw;
+    left: var(--native-mobile-rail-width);
+    width: min(18rem, calc(100vw - var(--native-mobile-rail-width)));
   }
 
   [data-app-platform='mobile'] .native-mobile-shell > .app-main {
-    width: 100vw;
-    padding-bottom: calc(4.25rem + env(safe-area-inset-bottom));
+    width: calc(100vw - var(--native-mobile-rail-width));
+    padding-bottom: calc(var(--native-mobile-navigation-height) + env(safe-area-inset-bottom));
+  }
+
+  [data-app-platform='mobile'] .native-mobile-shell:has(> .mobile-voice-bar) > .app-main {
+    padding-bottom: calc(
+      var(--native-mobile-navigation-height) + 3.75rem + env(safe-area-inset-bottom)
+    );
   }
 
   [data-app-platform='mobile'] .native-mobile-shell > .drawer-backdrop {
-    left: 0;
+    left: var(--native-mobile-rail-width);
   }
 
   [data-app-platform='mobile'] .native-mobile-navigation {
@@ -365,26 +382,37 @@
     z-index: 52;
     right: 0;
     bottom: 0;
-    left: 0;
+    left: var(--native-mobile-rail-width);
     display: grid;
-    min-height: calc(4.25rem + env(safe-area-inset-bottom));
-    grid-template-columns: repeat(4, 1fr);
-    padding: 0.35rem 0.35rem env(safe-area-inset-bottom);
+    min-height: calc(var(--native-mobile-navigation-height) + env(safe-area-inset-bottom));
+    grid-template-columns: repeat(3, 1fr);
+    padding: 0.3rem 0.5rem env(safe-area-inset-bottom);
     border-top: 1px solid var(--border-default);
     background: var(--surface-rail);
+    box-shadow: 0 -0.5rem 1.5rem rgb(0 0 0 / 18%);
   }
 
   [data-app-platform='mobile'] .native-mobile-navigation button,
   [data-app-platform='mobile'] .native-mobile-navigation a {
     display: grid;
     min-width: 0;
-    min-height: 3.4rem;
-    place-items: center;
-    padding: 0.35rem 0.2rem;
+    min-height: 3.65rem;
+    place-content: center;
+    gap: 0.2rem;
+    padding: 0.3rem 0.2rem;
     border-radius: var(--radius-control);
     color: var(--text-tertiary);
-    font-size: 0.68rem;
+    font-size: 0.66rem;
+    font-weight: 650;
     text-align: center;
+    transition:
+      background var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  [data-app-platform='mobile'] .native-mobile-navigation svg {
+    width: 1.25rem;
+    height: 1.25rem;
   }
 
   [data-app-platform='mobile'] .native-mobile-navigation button:hover,
@@ -395,8 +423,15 @@
     color: var(--text-primary);
   }
 
+  [data-app-platform='mobile'] .native-mobile-navigation .is-active {
+    background: var(--surface-active);
+    color: var(--accent);
+  }
+
   [data-app-platform='mobile'] .native-mobile-shell > .mobile-voice-bar {
-    bottom: calc(4.25rem + env(safe-area-inset-bottom));
+    right: 0;
+    bottom: calc(var(--native-mobile-navigation-height) + env(safe-area-inset-bottom));
+    left: var(--native-mobile-rail-width);
   }
 }
 

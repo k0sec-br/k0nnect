@@ -337,6 +337,7 @@ export function AppPage({ nativePlatform }: { nativePlatform?: Exclude<AppPlatfo
       conversations={call.conversations}
       selectedConversation={call.selectedConversation}
       navigationContext={navigationContext}
+      homeContent={homeContent}
       activeView={activeView}
       voice={shellVoice}
       channelsOpen={channelsOpen}
