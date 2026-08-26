@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { mediaErrorMessage } from '../../src/features/voice/media-errors';
+import { resolvePublicationMids } from '../../src/features/voice/media-session-manager';
 import { NegotiationQueue } from '../../src/features/voice/negotiation-queue';
 import {
   isExpectedMediaEnd,
@@ -93,6 +94,19 @@ describe('camada de mídia', () => {
     ).toBeUndefined();
   });
 
+  it('obtém o mid da offer quando o transceiver ainda não o expõe', () => {
+    const sdp = [
+      'v=0',
+      'm=audio 9 UDP/TLS/RTP/SAVPF 111',
+      'a=mid:audio-0',
+      'a=msid:stream-1 microphone-track',
+    ].join('\r\n');
+
+    expect(
+      resolvePublicationMids([{ track: { id: 'microphone-track' } }], [{ mid: null }], sdp),
+    ).toEqual(['audio-0']);
+  });
+
   it('limita a espera para uma nova inscrição de mídia', () => {
     expect(subscriptionRetryDelayMs(0)).toBe(500);
     expect(subscriptionRetryDelayMs(2)).toBe(2_000);
@@ -105,12 +119,9 @@ describe('camada de mídia', () => {
     'publisher_left',
     'publication_replaced',
     'session_rebuilt',
-  ] as MediaEndReason[])(
-    'trata %s como encerramento normal de mídia',
-    (reason) => {
-      expect(isExpectedMediaEnd(reason)).toBe(true);
-    },
-  );
+  ] as MediaEndReason[])('trata %s como encerramento normal de mídia', (reason) => {
+    expect(isExpectedMediaEnd(reason)).toBe(true);
+  });
 
   it.each(['device_removed', 'network_failure', 'error'] as MediaEndReason[])(
     'mantém %s como falha de mídia',

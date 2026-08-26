@@ -43,6 +43,31 @@ const VIDEO_ENCODINGS: RTCRtpEncodingParameters[] = [
   { rid: 'c', maxBitrate: 250_000, scaleResolutionDownBy: 4 },
 ];
 
+interface PublicationTrackInput {
+  track: Pick<MediaStreamTrack, 'id'>;
+}
+
+function trackMidsFromSdp(sdp: string): Map<string, string> {
+  const midsByTrackId = new Map<string, string>();
+  for (const mediaSection of sdp.split(/\r?\nm=/u).slice(1)) {
+    const mid = mediaSection.match(/(?:^|\r?\n)a=mid:([^\r\n]+)/u)?.[1]?.trim();
+    const trackId = mediaSection.match(/(?:^|\r?\n)a=msid:\S+\s+(\S+)/u)?.[1];
+    if (mid && trackId) midsByTrackId.set(trackId, mid);
+  }
+  return midsByTrackId;
+}
+
+export function resolvePublicationMids(
+  tracks: PublicationTrackInput[],
+  transceivers: Pick<RTCRtpTransceiver, 'mid'>[],
+  offerSdp: string,
+): string[] {
+  const midsByTrackId = trackMidsFromSdp(offerSdp);
+  return tracks.map(
+    ({ track }, index) => transceivers[index]?.mid ?? midsByTrackId.get(track.id) ?? '',
+  );
+}
+
 export class MediaSessionManager {
   private peerConnection: RTCPeerConnection | null = null;
   private sessionId: string | null = null;
@@ -151,7 +176,7 @@ export class MediaSessionManager {
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         if (!offer.sdp) throw new DOMException('SDP indisponível', 'InvalidStateError');
-        const mids = transceivers.map((transceiver) => transceiver.mid);
+        const mids = resolvePublicationMids(tracks, transceivers, offer.sdp);
         if (mids.some((mid) => !mid)) {
           throw new DOMException('Faixa sem identificador', 'InvalidStateError');
         }
