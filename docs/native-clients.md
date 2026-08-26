@@ -49,6 +49,8 @@ No Linux, o WebKitGTK recebe explicitamente a habilitação de mídia e o manipu
 
 Para desenvolvimento no Fedora, instale o elemento WebRTC do GStreamer com `sudo dnf install -y libnice-gstreamer1`.
 
+Se o WebKit relatar falha ao abrir o remote do PipeWire, confirme os serviços da sessão com `systemctl --user status pipewire pipewire-pulse wireplumber`. Para restaurar a sessão de mídia, execute `systemctl --user restart wireplumber pipewire pipewire-pulse`, aguarde os três serviços ficarem ativos e reinicie o cliente.
+
 ## Integrações do sistema
 
 No desktop, fechar a janela envia o aplicativo para o tray. O menu oferece abertura, estado, silenciamento de notificações, configurações, atualização e saída. A saída explícita encerra o processo.
