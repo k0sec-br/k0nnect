@@ -4,9 +4,11 @@ Todas as mudanças relevantes serão documentadas neste arquivo, seguindo Keep a
 
 ## [Unreleased]
 
+## [0.3.0]
+
 ### Added
 
-- Fundação da v0.1 com cadastro por convite, sessões seguras e recovery codes.
+- Fundação da v0.3 com cadastro por convite, sessões seguras e recovery codes.
 - Sala Geral com presença por Durable Object e áudio via Cloudflare Realtime.
 - Painel de convites, páginas de privacidade/segurança, testes e CI.
 - Câmera, seleção de dispositivos, prévia local e grade responsiva.

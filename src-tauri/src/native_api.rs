@@ -89,7 +89,7 @@ impl NativeApiClient {
         let client = Client::builder()
             .cookie_provider(cookie_jar.clone())
             .https_only(true)
-            .user_agent("k0nnect-native/0.1.0")
+            .user_agent("k0nnect-native/0.3.0")
             .build()
             .map_err(|_| "cliente HTTP indisponível")?;
         Ok(Self {

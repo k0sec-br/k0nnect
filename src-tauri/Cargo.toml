@@ -1,6 +1,6 @@
 [package]
 name = "k0nnect"
-version = "0.1.0"
+version = "0.3.0"
 description = "Cliente oficial do k0nnect"
 authors = ["K0Sec"]
 edition = "2021"
