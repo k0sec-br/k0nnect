@@ -18,13 +18,11 @@ import {
   HeadphonesOffIcon,
   MicIcon,
   MicOffIcon,
-  MenuIcon,
   PlusIcon,
   ScreenShareIcon,
   ScreenShareOffIcon,
   SettingsIcon,
   SwitchCameraIcon,
-  UserIcon,
   UsersIcon,
   VolumeIcon,
 } from './icons';
@@ -75,7 +73,6 @@ interface AppShellProps {
   conversations: ConversationSummary[];
   selectedConversation: ConversationSummary | null;
   navigationContext: 'group' | 'home';
-  homeContent: 'dm' | 'friends';
   activeView: 'call' | 'chat';
   voice: VoiceControls;
   channelsOpen: boolean;
@@ -478,9 +475,6 @@ function MemberSidebar({
 
 export function AppShell(props: AppShellProps) {
   const mobileLayout = useMediaQuery('(max-width: 767px)');
-  const mobileConversationsActive = props.channelsOpen || props.homeContent === 'dm';
-  const mobileFriendsActive =
-    !props.channelsOpen && props.navigationContext === 'home' && props.homeContent === 'friends';
   return (
     <div
       className={`app-shell ${props.membersOpen ? 'has-members-sidebar' : ''} ${props.nativePlatform ? `native-${props.nativePlatform}-shell` : ''}`}
@@ -567,35 +561,6 @@ export function AppShell(props: AppShellProps) {
             props.onMembersOpenChange(false);
           }}
         />
-      )}
-      {props.nativePlatform === 'mobile' && (
-        <nav className="native-mobile-navigation" aria-label="Navegação principal">
-          <button
-            className={mobileConversationsActive ? 'is-active' : ''}
-            type="button"
-            aria-current={mobileConversationsActive ? 'page' : undefined}
-            onClick={() => {
-              props.onHomeSelect();
-              props.onChannelsOpenChange(true);
-            }}
-          >
-            <MenuIcon aria-hidden="true" />
-            <span>Conversas</span>
-          </button>
-          <button
-            className={mobileFriendsActive ? 'is-active' : ''}
-            type="button"
-            aria-current={mobileFriendsActive ? 'page' : undefined}
-            onClick={props.onHomeSelect}
-          >
-            <UsersIcon aria-hidden="true" />
-            <span>Amigos</span>
-          </button>
-          <a href="/settings" onClick={handleInternalLink}>
-            <UserIcon aria-hidden="true" />
-            <span>Perfil</span>
-          </a>
-        </nav>
       )}
       {mobileLayout && props.activeView !== 'call' && (
         <div className="mobile-voice-bar" aria-label="Controles de voz">

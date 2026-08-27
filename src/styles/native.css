@@ -165,10 +165,6 @@
   line-height: 1.6;
 }
 
-.native-mobile-navigation {
-  display: none;
-}
-
 .native-update-notice {
   position: fixed;
   z-index: 90;
@@ -353,99 +349,40 @@
   }
 
   [data-app-platform='mobile'] .native-mobile-shell {
-    --native-mobile-navigation-height: 4.5rem;
-    --native-mobile-rail-width: 4rem;
-
-    padding-left: var(--native-mobile-rail-width);
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top);
   }
 
   [data-app-platform='mobile'] .native-mobile-shell > .group-rail {
-    display: flex;
-    width: var(--native-mobile-rail-width);
-    padding-inline: 0.45rem;
+    top: env(safe-area-inset-top);
+    height: calc(100dvh - env(safe-area-inset-top));
     padding-bottom: calc(0.7rem + env(safe-area-inset-bottom));
   }
 
-  [data-app-platform='mobile'] .native-mobile-shell > .group-rail .rail-item {
-    width: 3rem;
-    height: 3rem;
-  }
-
   [data-app-platform='mobile'] .native-mobile-shell > .channel-sidebar {
-    left: var(--native-mobile-rail-width);
-    width: min(18rem, calc(100vw - var(--native-mobile-rail-width)));
+    top: env(safe-area-inset-top);
+    height: calc(100dvh - env(safe-area-inset-top));
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   [data-app-platform='mobile'] .native-mobile-shell > .app-main {
-    width: calc(100vw - var(--native-mobile-rail-width));
-    padding-bottom: calc(var(--native-mobile-navigation-height) + env(safe-area-inset-bottom));
+    height: calc(100dvh - env(safe-area-inset-top));
+    padding-bottom: calc(4.25rem + env(safe-area-inset-bottom));
   }
 
-  [data-app-platform='mobile'] .native-mobile-shell:has(> .mobile-voice-bar) > .app-main {
-    padding-bottom: calc(
-      var(--native-mobile-navigation-height) + 3.75rem + env(safe-area-inset-bottom)
-    );
+  [data-app-platform='mobile'] .native-mobile-shell > .member-sidebar {
+    top: env(safe-area-inset-top);
+    height: calc(100dvh - env(safe-area-inset-top));
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   [data-app-platform='mobile'] .native-mobile-shell > .drawer-backdrop {
-    left: var(--native-mobile-rail-width);
-  }
-
-  [data-app-platform='mobile'] .native-mobile-navigation {
-    position: fixed;
-    z-index: 52;
-    right: 0;
-    bottom: 0;
-    left: var(--native-mobile-rail-width);
-    display: grid;
-    min-height: calc(var(--native-mobile-navigation-height) + env(safe-area-inset-bottom));
-    grid-template-columns: repeat(3, 1fr);
-    padding: 0.3rem 0.5rem env(safe-area-inset-bottom);
-    border-top: 1px solid var(--border-default);
-    background: var(--surface-rail);
-    box-shadow: 0 -0.5rem 1.5rem rgb(0 0 0 / 18%);
-  }
-
-  [data-app-platform='mobile'] .native-mobile-navigation button,
-  [data-app-platform='mobile'] .native-mobile-navigation a {
-    display: grid;
-    min-width: 0;
-    min-height: 3.65rem;
-    place-content: center;
-    gap: 0.2rem;
-    padding: 0.3rem 0.2rem;
-    border-radius: var(--radius-control);
-    color: var(--text-tertiary);
-    font-size: 0.66rem;
-    font-weight: 650;
-    text-align: center;
-    transition:
-      background var(--transition-fast),
-      color var(--transition-fast);
-  }
-
-  [data-app-platform='mobile'] .native-mobile-navigation svg {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-
-  [data-app-platform='mobile'] .native-mobile-navigation button:hover,
-  [data-app-platform='mobile'] .native-mobile-navigation button:focus-visible,
-  [data-app-platform='mobile'] .native-mobile-navigation a:hover,
-  [data-app-platform='mobile'] .native-mobile-navigation a:focus-visible {
-    background: var(--surface-active);
-    color: var(--text-primary);
-  }
-
-  [data-app-platform='mobile'] .native-mobile-navigation .is-active {
-    background: var(--surface-active);
-    color: var(--accent);
+    top: env(safe-area-inset-top);
   }
 
   [data-app-platform='mobile'] .native-mobile-shell > .mobile-voice-bar {
-    right: 0;
-    bottom: calc(var(--native-mobile-navigation-height) + env(safe-area-inset-bottom));
-    left: var(--native-mobile-rail-width);
+    min-height: calc(3.75rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(0.45rem + env(safe-area-inset-bottom));
   }
 }
 

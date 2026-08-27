@@ -11,7 +11,7 @@ Os clientes instalados usam Tauri 2, Rust e os assets React produzidos localment
 - `src/core`: transporte, plataforma, deep links, notificações e preferências;
 - `src-tauri`: janela, tray, cofre de sessão, HTTP, WebSocket e integração do sistema.
 
-O desktop usa painéis simultâneos e ocupa toda a janela. O Android usa navegação hierárquica, mantém os servidores em uma barra lateral compacta e oferece navegação inferior para conversas, amigos e perfil. Os canais abrem como painel sobre o conteúdo e as conversas ocupam a área restante. As duas composições reutilizam os tokens de `src/styles/tokens.css`.
+O desktop usa painéis simultâneos e ocupa toda a janela. O Android compartilha a composição web mobile: mantém os servidores na barra lateral, abre os canais como painel sobre o conteúdo e reserva a área principal para a conversa selecionada. O shell respeita as áreas seguras das barras do sistema e do recorte da tela. As duas composições reutilizam os tokens de `src/styles/tokens.css`.
 
 ## Inicialização e sessão
 
